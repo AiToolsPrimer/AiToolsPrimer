@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agency · {{ page }}</title>
+<style>
+:root{--bg:#0f172a;--panel:#1e293b;--line:#334155;--text:#e2e8f0;--muted:#94a3b8;--ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--accent:#38bdf8}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text)}
+header{display:flex;gap:18px;align-items:center;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header a{color:var(--muted);text-decoration:none;font-weight:500}header a.active,header a:hover{color:var(--text)}
+header .brand{font-weight:700;color:var(--accent)}main{padding:20px;max-width:1200px;margin:0 auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+h1{font-size:22px;margin:0 0 12px}h2{font-size:16px;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:var(--line)}.pill.ok{background:#14532d}.pill.warn{background:#78350f}.pill.bad{background:#7f1d1d}
+button,.btn{background:var(--accent);color:#0f172a;border:0;border-radius:6px;padding:6px 12px;font-weight:600;cursor:pointer}button.secondary{background:var(--line);color:var(--text)}button.danger{background:var(--bad);color:#fff}
+form.inline{display:inline}textarea,input[type=text],input[type=number],select{width:100%;background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit}
+.switch{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.switch small{display:block;color:var(--muted)}
+.muted{color:var(--muted)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:pre-wrap}
+.kill{background:var(--bad);color:#fff;padding:8px 14px;border-radius:6px;font-weight:700}
+.thumb{max-width:160px;max-height:100px;border-radius:6px}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">AI Tools Primer Agency</span>
+  {% for n in ["dashboard","queue","content","assets","platforms","scout","logs","models"] %}<a href="/{{ '' if n=='dashboard' else n }}" class="{{ 'active' if page==n }}">{{ n }}{% if n=='queue' and status.queued %} ({{ status.queued }}){% endif %}</a>{% endfor %}
+  <span style="margin-left:auto" class="muted">{{ 'DRY RUN' if status.dry_run else 'LIVE' }} · {{ status.profile }} · director: {{ status.director_provider }}</span>
+  <form method="post" action="/kill" class="inline"><button class="kill" onclick="return confirm('Freeze every agent and stop publishing?')">KILL</button></form>
+</header>
+<main>{% block body %}{% endblock %}</main>
+</body></html>

@@ -1,0 +1,80 @@
+# Copy to config/agency.yaml. Secrets go in .env, never here.
+dry_run: true              # nothing leaves the Mac until you set this to false
+panel_host: 127.0.0.1
+panel_port: 8765
+
+brand:
+  name: AI Tools Primer
+  site: https://aitoolsprimer.com
+  tagline: Independent, plain-English guides to AI tools and everyday software.
+  language: en
+  audience: People choosing and using AI tools and everyday software.
+  voice: >-
+    Plain English, specific, verified. No hype, no affiliate links, no paid placements.
+    Say when something was checked; say when it could not be verified.
+  pillars:
+    - AI tools compared and explained
+    - Documents, PDF, images, video software
+    - Windows, Mac and iPhone how-tos
+    - Passwords, scams, malware, data leaks
+  handles:
+    youtube: "@aitoolsprimer"
+    bluesky: aitoolsprimer.bsky.social
+    mastodon: "@aitoolsprimer@mastodon.social"
+    x: aitoolsprimer
+    hashnode: aitoolsprimer.hashnode.dev
+    medium: "@aitoolsprimer"
+  banned_claims: ["guaranteed", "best in the world", "#1", "100% safe"]
+
+hardware:
+  profile: m5pro-64gb      # m5pro-64gb | 64gb | 128gb | 32gb
+  unified_memory_gb: 64
+  gpu_budget_gb: 44        # raise after `sudo sysctl iogpu.wired_limit_mb=57344` (56 GB) if you like
+  director_resident: true
+
+runtimes:
+  lmstudio_url: http://127.0.0.1:1234
+  comfyui_url: http://127.0.0.1:8188
+  acestep_url: http://127.0.0.1:7867
+  lms_cli: lms
+  ffmpeg: ffmpeg
+  ffprobe: ffprobe
+  python: python3
+
+video:
+  max_seconds: 240         # four minutes
+  clip_seconds: 8          # native LTX-2.5 clip; looped/cut to the narration length
+  fps: 24
+  width: 1920
+  height: 1080
+  shorts_seconds: 45
+  music_db: -18
+  subtitles: sidecar       # burned | sidecar | none
+  default_visual_mode: mixed   # generated | image_motion | mixed
+
+media:
+  image_command: ""        # leave empty to use ComfyUI; or e.g. "mflux-generate --model qwen-image --prompt {prompt} --output {out} --width {width} --height {height} --seed {seed}"
+  video_command: ""        # leave empty to use the LTX-2.5 MLX template from the registry (or workflows/video.json if present)
+  tts_voice: default       # path to a 5-10 s WAV of the voice to clone (Chatterbox), or a Kokoro voice id like af_heart
+  music_endpoint: /generate
+  presenter_image: config/presenter.png   # optional photo for 'presenter' scenes
+
+limits:
+  posts_per_platform_per_day: 4
+  replies_per_platform_per_hour: 10
+  articles_per_week: 3
+  videos_per_week: 3
+  quiet_hours_utc: [1, 6]
+  max_revisions: 2
+
+director:
+  provider: local          # local | anthropic (paid, needs ANTHROPIC_API_KEY; off by default)
+  anthropic_model: claude-fable-5-1
+  daily_cycle_utc: "07:30"
+  community_every_minutes: 30
+  analyst_daily_utc: "22:00"
+  scout_weekly: "mon 09:00"
+
+platforms:
+  reddit:
+    extra: {subreddit: u_aitoolsprimer}

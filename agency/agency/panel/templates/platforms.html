@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block body %}
+<h1>Platforms</h1>
+<table><tr><th>platform</th><th>status</th><th>publishing</th><th>accepts</th><th>how to connect</th></tr>
+{% for n, p in platforms.items() %}<tr>
+<td><strong>{{ p.label }}</strong><br><small class="muted">{{ n }}</small></td>
+<td>{% if p.configured() %}<span class="pill ok">connected</span>{% else %}<span class="pill warn">missing</span><br><small class="mono">{{ p.missing_env()|join(' ') }}</small>{% endif %}</td>
+<td><form method="post" action="/toggle" class="inline"><input type="hidden" name="name" value="platform:{{ n }}"><input type="hidden" name="value" value="{{ '0' if status.platforms[n].enabled else '1' }}"><button class="{{ '' if status.platforms[n].enabled else 'secondary' }}">{{ 'ON' if status.platforms[n].enabled else 'off' }}</button></form></td>
+<td>{{ p.kinds|sort|join(', ') }}</td>
+<td><small>{{ p.free_tier_note }}</small><br><a href="{{ p.signup_url }}">keys</a> · <a href="{{ p.api_docs }}">API docs</a></td>
+</tr>{% endfor %}</table>
+<p class="muted">Credentials live in <code>.env</code> next to the config; the panel never shows or stores them.</p>
+{% endblock %}

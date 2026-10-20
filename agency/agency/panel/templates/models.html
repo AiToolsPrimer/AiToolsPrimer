@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% block body %}
+<h1>Models · profile {{ status.profile }}</h1>
+<table><tr><th>task</th><th>chosen</th><th>runtime</th><th>memory</th><th>licence</th><th>alternatives</th></tr>
+{% for task, a in assignments.items() %}<tr><td><strong>{{ task }}</strong></td><td>{{ chosen[task].name }}<br><small class="mono">{{ chosen[task].id }}</small></td><td>{{ chosen[task].runtime }}</td><td>{{ chosen[task].memory_gb }} GB</td><td><small>{{ chosen[task].license }}</small></td><td><small>{% for alt in [a.primary] + a.alternates|list if alt.name != chosen[task].name %}{{ alt.name }}{% if not loop.last %}, {% endif %}{% endfor %}</small></td></tr>{% endfor %}
+</table>
+<p class="muted">Change the profile or override a task in <code>config/agency.yaml</code> (hardware.profile, models overrides). Profiles: {{ profiles|join(', ') }}.</p>
+{% endblock %}
