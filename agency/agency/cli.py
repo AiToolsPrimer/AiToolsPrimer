@@ -42,7 +42,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"  [{'ok' if good else '!!'}] {label}{(': ' + detail) if detail else ''}")
 
     print("Tools")
-    for tool in (s.runtimes.ffmpeg, s.runtimes.ffprobe, s.runtimes.lms_cli, "parakeet-mlx", "mlx_whisper"):
+    for tool in (s.runtimes.ffmpeg, s.runtimes.ffprobe, s.runtimes.lms_cli, "llama-server", "mflux-generate-qwen", "parakeet-mlx"):
         row(tool, shutil.which(tool) is not None, "" if shutil.which(tool) else "not on PATH")
     print("Servers")
     for name, url in (("LM Studio", s.runtimes.lmstudio_url + "/v1/models"), ("ComfyUI", s.runtimes.comfyui_url + "/system_stats"), ("ACE-Step", s.runtimes.acestep_url)):
@@ -51,13 +51,20 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             row(name, r.status_code < 500, url)
         except httpx.HTTPError:
             row(name, False, f"{url} not reachable")
-    print("Models for profile", s.hardware.profile)
-    plan = registry.memory_plan(s.hardware.profile)
+    print("Models for profile", s.hardware.profile, "(one model at a time)")
     for task, m in a.models.items():
-        print(f"  - {task:12s} {m.name:24s} {m.memory_gb:5.1f} GB  {m.runtime:14s} {m.license}")
-    director = a.models["director"].memory_gb
-    heaviest = max(m.memory_gb for t, m in a.models.items() if t not in ("director", "writer", "coder"))
-    row("memory plan", director + heaviest <= s.hardware.gpu_budget_gb, f"director {director} GB + heaviest media model {heaviest} GB vs GPU budget {s.hardware.gpu_budget_gb} GB")
+        print(f"  - {task:14s} {m.name:24s} {m.memory_gb:5.1f} GB  {m.precision:28s} {m.runtime:14s} {m.license}")
+    heaviest = max(m.memory_gb for m in a.models.values())
+    row("memory plan", heaviest <= s.hardware.gpu_budget_gb, f"heaviest single model {heaviest} GB vs GPU budget {s.hardware.gpu_budget_gb} GB (raise with: sudo sysctl iogpu.wired_limit_mb=57344)")
+    chosen = a.brain_choice.chosen_name()
+    row("brain choice", chosen is not None, f"{chosen} (benchmarked on this Mac)" if chosen else "not benchmarked yet: run `agency doctor --benchmark` (loads each brain candidate once, a few minutes)")
+    if getattr(args, "benchmark", False):
+        print("Benchmarking brain candidates (one at a time)...")
+        live = Agency(dry_run=False)
+        out = live.benchmark_brains()
+        for r in out["results"]:
+            print(f"  - {r['model']:24s} {'ok' if r.get('ok') else 'FAILED'}  {r.get('tokens_per_s', '-')} tok/s  {r.get('error', '')[:120]}")
+        print(f"  chosen brain: {out['chosen']}")
     print("Workflows")
     for wf in ("image.json", "image-edit.json", "video.json", "avatar.json"):
         p = ROOT / "workflows" / wf
@@ -154,7 +161,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="agency", description="Local, token-free AI marketing agency")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("init", help="create config/agency.yaml and .env").set_defaults(fn=cmd_init)
-    sub.add_parser("doctor", help="check tools, servers, models and platforms").set_defaults(fn=cmd_doctor)
+    p = sub.add_parser("doctor", help="check tools, servers, models and platforms")
+    p.add_argument("--benchmark", action="store_true", help="load each brain candidate once and pick the strongest that runs well")
+    p.set_defaults(fn=cmd_doctor)
     p = sub.add_parser("run", help="start the control panel and the scheduler")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--no-schedule", action="store_true")

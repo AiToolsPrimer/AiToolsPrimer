@@ -18,7 +18,8 @@ from typing import Any, Callable
 from agency.media.audio import ASR, TTS, Music, srt_from_script
 from agency.media.ffmpeg import FF
 from agency.media.images import Images
-from agency.media.runner import ComfyUI, MediaError, run_template
+from agency.media.runner import ComfyUI, MediaError
+from agency.models.host import ModelHost
 from agency.models.registry import ModelSpec
 from agency.settings import VideoDefaults
 
@@ -83,6 +84,7 @@ class VideoAssembler:
         comfy: ComfyUI | None,
         workflows_dir: Path,
         defaults: VideoDefaults,
+        host: ModelHost | None = None,
         python: str = "python3",
         dry_run: bool = False,
         video_command: str = "",
@@ -92,6 +94,7 @@ class VideoAssembler:
         self.ff, self.tts, self.asr, self.music, self.images = ff, tts, asr, music, images
         self.video_spec, self.avatar_spec, self.comfy, self.workflows_dir = video_spec, avatar_spec, comfy, workflows_dir
         self.d, self.python, self.dry_run = defaults, python, dry_run
+        self.host = host
         self.video_command = video_command or video_spec.command
         self.presenter_image = presenter_image
         self.progress = progress or (lambda msg: None)
@@ -104,11 +107,15 @@ class VideoAssembler:
         if self.dry_run:
             return self.ff.placeholder_clip(out, seconds, self.d.width, self.d.height, self.d.fps, prompt)
         if self.comfy and (self.workflows_dir / "video.json").exists():
+            if self.host:
+                self.host.release()
             wf = ComfyUI.fill(self.workflows_dir / "video.json", {"prompt": prompt, "seed": seed or random.randint(1, 2**31), "width": self.d.width, "height": self.d.height, "frames": frames, "fps": self.d.fps})
             files = self.comfy.run(wf, out.parent)
             files[0].replace(out)
             return out
-        run_template(self.video_command, {"python": self.python, "prompt": prompt, "out": out, "width": self.d.width, "height": self.d.height, "frames": frames, "fps": self.d.fps, "seed": seed or random.randint(1, 2**31), "model": self.video_spec.id})
+        if not self.host:
+            raise MediaError("video generation needs the model host")
+        self.host.run_job(self.video_spec, self.video_command, {"prompt": prompt, "out": out, "width": self.d.width, "height": self.d.height, "frames": frames, "fps": self.d.fps, "seed": seed or random.randint(1, 2**31)})
         if not out.exists():
             raise MediaError("video backend produced no file")
         return out
@@ -116,6 +123,8 @@ class VideoAssembler:
     def presenter_clip(self, audio: Path, out: Path, seconds: float) -> Path:
         if self.dry_run or not self.avatar_spec or not self.presenter_image or not self.comfy or not (self.workflows_dir / "avatar.json").exists():
             return self.ff.placeholder_clip(out, seconds, self.d.width, self.d.height, self.d.fps, "presenter")
+        if self.host:
+            self.host.release()
         wf = ComfyUI.fill(self.workflows_dir / "avatar.json", {"image": str(self.presenter_image.resolve()), "audio": str(audio.resolve()), "width": self.d.width, "height": self.d.height, "fps": self.d.fps})
         files = self.comfy.run(wf, out.parent)
         files[0].replace(out)

@@ -73,9 +73,10 @@ def extract_json(text: str) -> Any:
 class LocalLLM:
     """OpenAI-compatible chat against a local server (default: LM Studio on :1234)."""
 
-    def __init__(self, base_url: str, model: ModelSpec, timeout: float = 600.0, transport: httpx.BaseTransport | None = None):
+    def __init__(self, base_url: str, model: ModelSpec, timeout: float = 600.0, transport: httpx.BaseTransport | None = None, reasoning_effort: str | None = None):
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.reasoning_effort = reasoning_effort
         self.client = httpx.Client(base_url=self.base_url, timeout=timeout, transport=transport)
 
     def chat(
@@ -94,6 +95,8 @@ class LocalLLM:
             "max_tokens": max_tokens,
             "stream": False,
         }
+        if self.reasoning_effort:
+            body["reasoning_effort"] = self.reasoning_effort
         if schema:
             body["response_format"] = {"type": "json_schema", "json_schema": {"name": "reply", "schema": schema}}
         elif json_mode:

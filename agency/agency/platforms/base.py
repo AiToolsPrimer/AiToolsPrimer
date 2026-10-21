@@ -65,6 +65,7 @@ class Platform:
     signup_url: ClassVar[str] = ""
     api_docs: ClassVar[str] = ""
     free_tier_note: ClassVar[str] = ""
+    publish_modes: ClassVar[tuple[str, ...]] = ("api", "browser", "intent", "manual", "off")
 
     def __init__(self, http: GuardedHTTP, dry_run: bool = True, extra: dict[str, Any] | None = None):
         self.http = http

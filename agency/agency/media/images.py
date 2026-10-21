@@ -1,4 +1,4 @@
-"""Image generation and editing through ComfyUI workflows (or a CLI template)."""
+"""Image generation and editing: mflux (MLX) jobs through the host, or ComfyUI workflows."""
 from __future__ import annotations
 
 import random
@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from agency.media.ffmpeg import FF
-from agency.media.runner import ComfyUI, MediaError, run_template
+from agency.media.runner import ComfyUI, MediaError
+from agency.models.host import ModelHost
 from agency.models.registry import ModelSpec
 
 PLATFORM_SIZES: dict[str, tuple[int, int]] = {
@@ -17,12 +18,16 @@ PLATFORM_SIZES: dict[str, tuple[int, int]] = {
     "thumbnail": (1280, 720),
     "pin": (1000, 1500),
     "og": (1200, 630),
+    "banner": (1500, 500),
 }
 
 
 class Images:
-    def __init__(self, spec: ModelSpec, comfy: ComfyUI | None, workflows_dir: Path, ff: FF, dry_run: bool = False, python: str = "python3", command: str = ""):
-        self.spec, self.comfy, self.workflows_dir, self.ff, self.dry_run, self.python, self.command = spec, comfy, workflows_dir, ff, dry_run, python, command
+    def __init__(self, spec: ModelSpec, host: ModelHost, comfy: ComfyUI | None, workflows_dir: Path, ff: FF, dry_run: bool = False, command: str = "", steps: int = 20, edit_spec: ModelSpec | None = None):
+        self.spec, self.host, self.comfy, self.workflows_dir, self.ff, self.dry_run = spec, host, comfy, workflows_dir, ff, dry_run
+        self.command = command or (spec.command if spec.runtime in ("mlx-cli", "python-script") else "")
+        self.steps = steps
+        self.edit_spec = edit_spec
 
     def _workflow_for(self, spec: ModelSpec, edit: bool = False) -> Path:
         slug = spec.name.lower().replace(" ", "-").replace(".", "")
@@ -38,13 +43,14 @@ class Images:
         out.parent.mkdir(parents=True, exist_ok=True)
         if self.dry_run:
             return self._placeholder(out, width, height, prompt)
-        if self.command:
-            run_template(self.command, {"python": self.python, "prompt": prompt, "out": out, "width": width, "height": height, "seed": seed, "model": self.spec.id})
+        if self.command and self.command != "comfyui":
+            self.host.run_job(self.spec, self.command, {"prompt": prompt, "out": out, "width": width, "height": height, "seed": seed, "steps": self.steps})
             if not out.exists():
                 raise MediaError("image command produced no file")
             return out
         if not self.comfy:
-            raise MediaError("no image backend: start ComfyUI or set an image command template")
+            raise MediaError("no image backend: install mflux or start ComfyUI")
+        self.host.release()
         wf = ComfyUI.fill(self._workflow_for(self.spec), {"prompt": prompt, "negative": negative, "seed": seed, "width": width, "height": height, "model": self.spec.id})
         files = self.comfy.run(wf, out.parent)
         files[0].replace(out)
@@ -57,7 +63,9 @@ class Images:
             return out
         if not self.comfy:
             raise MediaError("image editing needs ComfyUI")
-        wf = ComfyUI.fill(self._workflow_for(self.spec, edit=True), {"prompt": instruction, "seed": seed or random.randint(1, 2**31), "image": str(image.resolve()), "model": self.spec.id})
+        self.host.release()
+        spec = self.edit_spec or self.spec
+        wf = ComfyUI.fill(self._workflow_for(spec, edit=True), {"prompt": instruction, "seed": seed or random.randint(1, 2**31), "image": str(image.resolve()), "model": spec.id})
         files = self.comfy.run(wf, out.parent)
         files[0].replace(out)
         return out

@@ -51,12 +51,22 @@ class Brand(BaseModel):
 class Hardware(BaseModel):
     profile: str = "m5pro-64gb"
     unified_memory_gb: int = 64
-    gpu_budget_gb: int = 44  # macOS exposes ~70-75% of unified memory to the GPU by default
-    director_resident: bool = True  # keep the director loaded; media models load on demand
+    gpu_budget_gb: int = 56  # after `sudo sysctl iogpu.wired_limit_mb=57344`; macOS default is ~70-75% of unified memory
+    one_model_at_a_time: bool = True
+
+
+class Models(BaseModel):
+    brain: Literal["auto", "flash-next", "27b"] = "auto"   # auto = whatever the doctor benchmark chose on this Mac
+    overrides: dict[str, str] = Field(default_factory=dict)  # task -> model name from the registry
+    team_mode: Literal["team", "best_of_n", "single"] = "team"  # team = brain + second writer, brain judges
+    thinking_effort: Literal["xhigh", "high", "medium", "low"] = "xhigh"   # brain decisions, judging, fact-check
+    draft_effort: Literal["xhigh", "high", "medium", "low"] = "medium"    # first drafts
+    candidates_per_draft: int = 2
 
 
 class Runtimes(BaseModel):
     lmstudio_url: str = "http://127.0.0.1:1234"
+    llamacpp_port: int = 8081
     comfyui_url: str = "http://127.0.0.1:8188"
     acestep_url: str = "http://127.0.0.1:7867"
     lms_cli: str = "lms"  # LM Studio CLI, used to load/unload models
@@ -78,7 +88,8 @@ class VideoDefaults(BaseModel):
 
 
 class Media(BaseModel):
-    image_command: str = ""      # optional CLI template instead of ComfyUI, e.g. mflux: see docs/MODELS.md
+    image_command: str = ""      # overrides the mflux template from the registry (or set to "comfyui")
+    image_steps: int = 20
     video_command: str = ""      # overrides the LTX-2.5 MLX template from the registry
     tts_voice: str = "default"   # path to a 5-10 s reference WAV for Chatterbox cloning, or a Kokoro voice id
     music_endpoint: str = "/generate"
@@ -104,8 +115,19 @@ class Director(BaseModel):
     scout_weekly: str = "mon 09:00"
 
 
+PublishMode = Literal["api", "browser", "intent", "manual", "off"]
+
+# Platforms whose API costs money or does not exist publish through the agent's browser with your click.
+DEFAULT_MODES: dict[str, str] = {
+    "x": "browser", "medium": "browser", "substack": "browser", "linkedin_articles": "browser", "blogger": "browser",
+    "dailymotion": "browser", "reddit": "manual", "quora": "manual", "hackernews": "manual", "stackexchange": "manual",
+    "flipboard": "intent",
+}
+
+
 class PlatformConfig(BaseModel):
     enabled: bool = False
+    mode: PublishMode | None = None   # None = default for that platform (api, or DEFAULT_MODES)
     env_prefix: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
 
@@ -113,6 +135,7 @@ class PlatformConfig(BaseModel):
 class Settings(BaseModel):
     brand: Brand = Brand()
     hardware: Hardware = Hardware()
+    models: Models = Models()
     runtimes: Runtimes = Runtimes()
     video: VideoDefaults = VideoDefaults()
     media: Media = Media()
@@ -122,6 +145,13 @@ class Settings(BaseModel):
     dry_run: bool = True  # nothing leaves the machine until this is False
     panel_host: str = "127.0.0.1"
     panel_port: int = 8765
+    ui_language: str = "en"
+
+    def mode_for(self, platform: str) -> str:
+        cfg = self.platforms.get(platform)
+        if cfg and cfg.mode:
+            return cfg.mode
+        return DEFAULT_MODES.get(platform, "api")
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Settings":

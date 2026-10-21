@@ -4,26 +4,26 @@ from agency.models import registry
 from agency.platforms import oauth1
 
 
-def test_every_task_has_commercial_license_and_fits_64gb():
+def test_every_task_has_commercial_license_and_fits_alone_in_64gb():
     for task in registry.ASSIGNMENTS:
-        m = registry.resolve(task, "m5pro-64gb")
-        assert "non-commercial" not in m.license.lower()
-        assert m.memory_gb <= 36, task
+        for m in registry.candidates(task):
+            assert "non-commercial" not in m.license.lower(), m.name
+            assert m.memory_gb <= 56, (task, m.name)   # one model at a time: each must fit alone
 
 
 def test_profiles_and_overrides():
-    assert registry.resolve("vision", "m5pro-64gb").name == "Qwen3-VL-8B"
-    assert registry.resolve("vision", "128gb").name == "Qwen3.8-27B"
+    assert registry.resolve("brain", "m5pro-64gb").name == "Qwen3.8-Flash-Next"
+    assert registry.resolve("director", "m5pro-64gb").name == "Qwen3.8-Flash-Next"   # alias of brain
+    assert registry.resolve("brain", "m5pro-64gb-b").name == "Qwen3.8-27B (8-bit)"
     assert registry.resolve("image", "32gb").name == "Z-Image-Turbo"
     assert registry.resolve("tts", overrides={"tts": "Kokoro 82M"}).name == "Kokoro 82M"
     with pytest.raises(KeyError):
         registry.resolve("tts", overrides={"tts": "ElevenLabs"})
 
 
-def test_director_plus_heaviest_media_fits_budget():
-    plan = registry.memory_plan("m5pro-64gb")
-    heaviest = max(v for k, v in plan.items() if k not in ("director", "writer", "coder"))
-    assert plan["director"] + heaviest <= 44
+def test_brain_candidates_are_ordered_strongest_first():
+    names = [m.name for m in registry.candidates("brain")]
+    assert names[0] == "Qwen3.8-Flash-Next" and "27B" in names[1]
 
 
 def test_oauth1_matches_the_documented_x_example():
