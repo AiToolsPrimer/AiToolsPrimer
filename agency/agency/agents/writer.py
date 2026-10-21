@@ -25,14 +25,20 @@ PLATFORM_RULES: dict[str, str] = {
 class Writer(Agent):
     role = "senior copywriter"
     temperature = 0.7
+    kb = None  # KnowledgeBase, injected by the app
+
+    def rules_for(self, platform: str) -> str:
+        if self.kb is not None:
+            return self.kb.brief(platform) + "\n\n" + self.kb.playbook("virality", 2500)
+        return PLATFORM_RULES.get(platform, "short, specific, useful.")
 
     def post(self, platform: str, topic: str, angle: str, link: str = "", facts: str = "", with_image: bool = False) -> dict[str, Any]:
-        rules = PLATFORM_RULES.get(platform, "short, specific, useful.")
+        rules = self.rules_for(platform)
         memory = self.memory_context(topic)
         data = self.ask_json(
             f"Write one {platform} post.\nTopic: {topic}\nAngle: {angle}\nLink to include: {link or '(none)'}\n"
             f"Verified facts you may use (and only these): {facts or '(none supplied: use no numbers or claims that need checking)'}\n"
-            f"Platform rules: {rules}\nRelated things we published before (do not repeat them): {memory}\n"
+            f"Platform knowledge card and playbook (follow the hard limits exactly): {rules}\nRelated things we published before (do not repeat them): {memory}\n"
             + ("Also write an alt text for the accompanying image.\n" if with_image else "")
             + 'Return JSON: {"text": "...", "title": "...", "tags": ["..."], "alt_text": "...", "image_prompt": "a short visual brief for an illustrator, no text in the image unless stated"}'
         )
@@ -44,7 +50,7 @@ class Writer(Agent):
         data = self.ask_json(
             f"Write a full article for {platform}.\nTopic: {topic}\nAngle: {angle}\nCanonical guide URL: {link or '(none)'}\n"
             f"Verified facts (only these): {facts or '(none: keep claims generic and mark anything that needs checking in [brackets])'}\n"
-            f"Rules: {PLATFORM_RULES['article']}\n"
+            f"Rules: {PLATFORM_RULES['article']}\nPlatform card: {self.rules_for(platform)[:2000]}\n"
             'Return JSON: {"title": "...", "markdown": "...", "excerpt": "one sentence", "tags": ["..."], "cover_prompt": "visual brief for the cover image"}',
             temperature=0.6,
         )
@@ -69,7 +75,7 @@ class Writer(Agent):
 
     def captions_for_short(self, title: str, platform: str) -> dict[str, Any]:
         return self.ask_json(
-            f"Write the caption for a vertical short cut from the video '{title}' for {platform}. Rules: {PLATFORM_RULES.get(platform, 'short')}\n"
+            f"Write the caption for a vertical short cut from the video '{title}' for {platform}. Platform card: {self.rules_for(platform)[:1800]}\n"
             'Return JSON: {"text": "...", "title": "...", "tags": ["..."]}'
         )
 

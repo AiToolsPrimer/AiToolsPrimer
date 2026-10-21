@@ -14,6 +14,8 @@ from agency.agents.scout import Scout
 from agency.agents.strategist import Strategist
 from agency.agents.writer import Writer
 from agency.director.orchestrator import Director
+from agency.knowledge.base import KnowledgeBase
+from agency.knowledge.news_watch import NewsWatch
 from agency.llm.client import AnthropicLLM
 from agency.llm.hosted import HostedLLM
 from agency.media.audio import ASR, TTS, Music
@@ -82,9 +84,13 @@ class Agency:
             presenter_image=presenter if presenter.exists() else None, progress=self.note,
         )
 
+        # ---------------------------------------------------------------- knowledge
+        self.kb = KnowledgeBase(ROOT / "knowledge")
+
         # ---------------------------------------------------------------- agents
         brand = s.brand
         self.writer = Writer(self.brain, self.store, brand)
+        self.writer.kb = self.kb
         self.strategist = Strategist(self.brain, self.store, brand, self.http)
         self.safety = Safety(self.brain, self.store, brand, guard=self.guard_llm if llm is None else None)
         self.image_agent = ImageAgent(self.brain, self.store, brand, self.images, self.assets_dir, vision=self.brain)
@@ -92,8 +98,9 @@ class Agency:
         self.policy = PolicyEngine(self.toggles, s.limits, count_recent=lambda platform, kind, window: self.store.count_recent_actions(platform, kind.value, window))
         self.director = Director(
             llm=self.director_llm, store=self.store, settings=s, toggles=self.toggles, policy=self.policy, platforms=self.platforms,
-            strategist=self.strategist, writer=self.writer, safety=self.safety, image_agent=self.image_agent, video_agent=self.video_agent, log=self.note,
+            strategist=self.strategist, writer=self.writer, safety=self.safety, image_agent=self.image_agent, video_agent=self.video_agent, kb=self.kb, log=self.note,
         )
+        self.news_watch = NewsWatch(self.brain, self.store, brand, self.http, self.kb)
         self.community = CommunityManager(self.brain, self.store, brand, self.writer, self.platforms, self.director.submit, safety=self.safety)
         self.scout = Scout(self.brain, self.store, brand, self.http, self.director.submit, image_agent=self.image_agent)
         self.analyst = Analyst(self.brain, self.store, brand, self.platforms, self.director.submit)

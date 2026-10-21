@@ -91,6 +91,22 @@ CREATE TABLE IF NOT EXISTS notes (
   source TEXT NOT NULL,          -- analyst | director | human
   text TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS knowledge_updates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  found_at TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  field TEXT,
+  new_value TEXT,
+  source TEXT,
+  confidence REAL,
+  status TEXT NOT NULL,          -- proposed | applied | dismissed
+  UNIQUE(platform, summary)
+);
+CREATE TABLE IF NOT EXISTS knowledge_checks (
+  platform TEXT PRIMARY KEY,
+  checked_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS vectors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ref_table TEXT NOT NULL,
@@ -248,6 +264,32 @@ class Store:
         for r in rows:
             r["signup_kit"] = json.loads(r["signup_kit"]) if r.get("signup_kit") else None
         return rows
+
+    # ----------------------------------------------------------------- knowledge
+    def add_knowledge_update(self, platform: str, summary: str, field: str, new_value: str, source: str, confidence: float) -> int | None:
+        try:
+            cur = self._exec("INSERT INTO knowledge_updates(found_at,platform,summary,field,new_value,source,confidence,status) VALUES(?,?,?,?,?,?,?,'proposed')", (utcnow(), platform, summary, field, new_value, source, confidence))
+            return int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            return None
+
+    def get_knowledge_update(self, uid: int) -> dict[str, Any] | None:
+        rows = self._rows("SELECT * FROM knowledge_updates WHERE id=?", (uid,))
+        return rows[0] if rows else None
+
+    def list_knowledge_updates(self, status: str | None = "proposed") -> list[dict[str, Any]]:
+        if status:
+            return self._rows("SELECT * FROM knowledge_updates WHERE status=? ORDER BY confidence DESC, id DESC", (status,))
+        return self._rows("SELECT * FROM knowledge_updates ORDER BY id DESC")
+
+    def set_knowledge_update_status(self, uid: int, status: str) -> None:
+        self._exec("UPDATE knowledge_updates SET status=? WHERE id=?", (status, uid))
+
+    def touch_knowledge_check(self, platform: str) -> None:
+        self._exec("INSERT INTO knowledge_checks(platform,checked_at) VALUES(?,?) ON CONFLICT(platform) DO UPDATE SET checked_at=excluded.checked_at", (platform, utcnow()))
+
+    def knowledge_checks(self) -> dict[str, str]:
+        return {r["platform"]: r["checked_at"] for r in self._rows("SELECT * FROM knowledge_checks")}
 
     # ----------------------------------------------------------------- notes & vectors
     def add_note(self, source: str, text: str) -> int:

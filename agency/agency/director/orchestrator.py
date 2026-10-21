@@ -18,6 +18,7 @@ from agency.agents.safety import Safety
 from agency.agents.scout import Scout
 from agency.agents.strategist import Strategist
 from agency.agents.writer import Writer
+from agency.knowledge.base import KnowledgeBase, check_constraints, fix_for_platform
 from agency.memory.store import Store
 from agency.platforms.base import Platform, PublishItem
 from agency.safety.policy import Action, ActionKind, Decision, PolicyEngine, Verdict
@@ -53,9 +54,11 @@ class Director(Agent):
         community: CommunityManager | None = None,
         scout: Scout | None = None,
         analyst: Analyst | None = None,
+        kb: KnowledgeBase | None = None,
         log: Callable[[str], None] | None = None,
     ):
         super().__init__(llm, store, settings.brand)
+        self.kb = kb
         self.settings, self.toggles, self.policy, self.platforms = settings, toggles, policy, platforms
         self.strategist, self.writer, self.safety = strategist, writer, safety
         self.image_agent, self.video_agent = image_agent, video_agent
@@ -244,6 +247,22 @@ class Director(Agent):
 
     def _gate(self, cid: int) -> Decision:
         row = self.store.get_content(cid)
+        if self.kb is not None and row["kind"] in ("post", "image", "short", "reply"):
+            c = self.kb.constraints(row["platform"])
+            fixed, first_comment = fix_for_platform(row.get("body") or "", c, link=row["meta"].get("link", ""))
+            problems = check_constraints(fixed, row["platform"], c, title=row.get("title") or "", is_ai_generated_media=bool(row.get("assets")))
+            meta = {**row["meta"], "first_comment": first_comment} if first_comment else dict(row["meta"])
+            if problems:
+                meta["constraint_notes"] = problems
+            if fixed != row.get("body"):
+                self.store.update_content(cid, body=fixed, meta=meta)
+                row = self.store.get_content(cid)
+            elif meta != row["meta"]:
+                self.store.update_content(cid, meta=meta)
+                row = self.store.get_content(cid)
+            if problems and any("label" in p for p in problems):
+                self.store.update_content(cid, status="rejected", meta={**row["meta"], "reject_reason": "; ".join(problems)})
+                return Decision(Verdict.DENY, "; ".join(problems))
         verdict = self.safety.check(row.get("body") or row.get("title") or "", facts_supplied=bool(row["meta"].get("facts")))
         if not verdict.ok:
             self.store.update_content(cid, status="rejected", meta={**row["meta"], "reject_reason": f"safety: {verdict.reason}"})

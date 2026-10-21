@@ -42,4 +42,5 @@ def build(agency: Agency) -> BackgroundScheduler:
     h, m = _hhmm(hm)
     sched.add_job(agency.director.scout_cycle, CronTrigger(day_of_week=day, hour=h, minute=m), id="scout", max_instances=1, coalesce=True)
     sched.add_job(lambda: release_due(agency), IntervalTrigger(minutes=5), id="release", max_instances=1, coalesce=True)
+    sched.add_job(agency.news_watch.run, CronTrigger(day_of_week="sun", hour=6, minute=0), id="news_watch", max_instances=1, coalesce=True)
     return sched
