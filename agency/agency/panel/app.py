@@ -17,7 +17,7 @@ from agency.settings import LOCKED_TOGGLES
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-NAV = ["office", "queue", "operator", "outreach", "content", "assets", "platforms", "knowledge", "learning", "models", "scout", "logs"]
+NAV = ["office", "queue", "operator", "outreach", "deliverables", "content", "assets", "platforms", "knowledge", "learning", "models", "scout", "logs"]
 
 
 def create_app(agency: Agency) -> FastAPI:
@@ -153,7 +153,28 @@ def create_app(agency: Agency) -> FastAPI:
     @app.get("/learning", response_class=HTMLResponse)
     def learning(request: Request):
         corrections = agency.store.list_corrections(100)
-        return render(request, "learning.html", corrections=corrections, count=agency.store.count_corrections(), notes=agency.store.recent_notes(20), metrics=agency.store.metrics_summary(30))
+        return render(request, "learning.html", corrections=corrections, count=agency.store.count_corrections(), notes=agency.store.recent_notes(20), metrics=agency.store.metrics_summary(30), rules=agency.learning.current_rules(), training=agency.learning.export_training_set() if agency.store.count_corrections() else {"examples": 0, "ready": False, "needed": 300})
+
+    @app.get("/deliverables", response_class=HTMLResponse)
+    def deliverables(request: Request):
+        briefing = next((n for n in agency.store.recent_notes(30) if n["source"] == "briefing"), None)
+        return render(request, "deliverables.html", items=agency.store.list_deliverables(), briefing=briefing)
+
+    @app.get("/deliverable/{did}/{fmt}")
+    def deliverable_file(did: int, fmt: str):
+        rows = [d for d in agency.store.list_deliverables(500) if d["id"] == did]
+        if not rows:
+            raise HTTPException(404)
+        path = rows[0]["pdf_path"] if fmt == "pdf" else rows[0]["html_path"]
+        if not path or not Path(path).exists():
+            raise HTTPException(404)
+        return FileResponse(path)
+
+    @app.post("/campaign")
+    def campaign(brief: str = Form(...), weeks: int = Form(4)):
+        platforms = [n for n, p in agency.platforms.items() if agency.toggles.platform_enabled(n) and agency.mode_for(n) != "off"]
+        background("campaign", lambda: agency.deliverables.campaign(brief, platforms, weeks))
+        return RedirectResponse("/deliverables", status_code=303)
 
     @app.get("/models", response_class=HTMLResponse)
     def models(request: Request):
@@ -245,6 +266,11 @@ def create_app(agency: Agency) -> FastAPI:
             "mail": agency.director.mail_cycle,
             "mail_drafts": agency.mail.save_drafts_to_gmail,
             "pr": agency.director.pr_cycle,
+            "monthly": agency.monthly_deliverables,
+            "plan": lambda: agency.deliverables.monthly_plan(__import__("datetime").date.today().year, __import__("datetime").date.today().month, [n for n, p in agency.platforms.items() if agency.toggles.platform_enabled(n) and agency.mode_for(n) != "off"]),
+            "report": lambda: agency.deliverables.monthly_report(__import__("datetime").date.today().year, __import__("datetime").date.today().month),
+            "briefing": lambda: agency.director.briefing(voice=agency.toggles.get("make_voiceover")),
+            "style": agency.refresh_style,
             "video": lambda: agency.director.produce_video(topic or "a guide from our site", angle or "practical, verified", target_seconds=seconds or None),
             "post": lambda: agency.director.produce_post(platform, topic or "a guide from our site", angle or "practical, verified", with_image=True),
         }
@@ -252,7 +278,7 @@ def create_app(agency: Agency) -> FastAPI:
             raise HTTPException(404)
         started = background(job, fns[job])
         agency.note(f"job {job}: {'started' if started else 'already running'}")
-        target = "/models" if job == "benchmark" else "/outreach" if job in ("network", "questions", "mail", "mail_drafts", "pr") else "/"
+        target = "/models" if job == "benchmark" else "/outreach" if job in ("network", "questions", "mail", "mail_drafts", "pr") else "/deliverables" if job in ("monthly", "plan", "report", "briefing") else "/learning" if job == "style" else "/"
         return RedirectResponse(target, status_code=303)
 
     @app.post("/scout/{sid}/{what}")

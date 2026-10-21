@@ -35,6 +35,7 @@ def build(agency: Agency) -> BackgroundScheduler:
     d = agency.settings.director
     h, m = _hhmm(d.daily_cycle_utc)
     sched.add_job(agency.director.daily_cycle, CronTrigger(hour=h, minute=m), id="daily", max_instances=1, coalesce=True)
+    daily_h, daily_m = h, m
     sched.add_job(agency.director.community_cycle, IntervalTrigger(minutes=d.community_every_minutes), id="community", max_instances=1, coalesce=True)
     h, m = _hhmm(d.analyst_daily_utc)
     sched.add_job(agency.director.analyst_cycle, CronTrigger(hour=h, minute=m), id="analyst", max_instances=1, coalesce=True)
@@ -47,4 +48,7 @@ def build(agency: Agency) -> BackgroundScheduler:
     sched.add_job(agency.director.mail_cycle, IntervalTrigger(minutes=60), id="mail", max_instances=1, coalesce=True)
     sched.add_job(agency.director.pr_cycle, CronTrigger(day_of_week="tue", hour=10, minute=0), id="pr", max_instances=1, coalesce=True)
     sched.add_job(agency.director.questions_cycle, CronTrigger(hour=11, minute=20), id="questions", max_instances=1, coalesce=True)
+    sched.add_job(agency.monthly_deliverables, CronTrigger(day=1, hour=6, minute=30), id="monthly", max_instances=1, coalesce=True)
+    sched.add_job(agency.refresh_style, CronTrigger(day_of_week="sun", hour=7, minute=0), id="style", max_instances=1, coalesce=True)
+    sched.add_job(lambda: agency.director.briefing(voice=agency.toggles.get("make_voiceover")), CronTrigger(hour=daily_h, minute=max(0, daily_m - 10)), id="briefing", max_instances=1, coalesce=True)
     return sched

@@ -87,6 +87,17 @@ class FakeLLM:
                                 {"url": "https://news.ycombinator.com/item?id=41", "guide_url": "https://aitoolsprimer.com/pdf", "fit": 0.8, "answer_points": ["we tested five free PDF editors"]}]}
         if "draft an answer to this" in t:
             return {"text": "We tested five free PDF editors on a real contract. Two added a watermark after the trial. I run the site that published the test."}
+        if "build the editorial plan" in t:
+            return {"month_theme": "Documents without surprises", "weeks": [{"week": 1, "theme": "PDF week", "days": [{"day": d, "items": [{"kind": "post", "platforms": ["bluesky", "mastodon"], "title": "Two free PDF editors watermark after the trial", "guide": "https://aitoolsprimer.com/pdf", "series": "Tested Tuesday"}]} for d in range(1, 32)]}]}
+        if "write the narrative of the monthly report" in t:
+            return {"summary": "A quiet month with 3 pieces out. We reached 999 people.", "worked": ["The PDF carousel got the most saves."], "did_not": ["X posts without images sank."], "learned": ["Images matter."], "priorities": ["More carousels", "Video every Tuesday", "Reply faster"]}
+        if "design a" in t and "campaign" in t:
+            return {"name": "Documents without surprises", "idea": "Show what free PDF editors do to your files.", "audience": "People sending contracts", "belief": "Free means safe", "hooks": ["Two free PDF editors watermark after the trial", "Your contract, five tools, one surprise", "The setting that leaks the file name"],
+                    "pieces": [{"platform": "youtube", "kind": "video", "title": "Five free PDF editors tested", "why": "the proof"}], "assets": [{"type": "carousel", "spec": "5 slides 1080x1350"}], "timeline": [{"week": 1, "focus": "launch", "pieces": ["video"]}], "measurement": ["saves on the carousel"], "risks": ["tools change prices in 45 days"]}
+        if "morning briefing" in t:
+            return {"text": "Good morning. Yesterday nothing went out. Today the plan has one post. Two items wait for your approval."}
+        if "infer the house style rules" in t:
+            return {"rules": ["Open with the finding, not the topic.", "No exclamation marks.", "Link in the last line."]}
         if "you are reviewing a" in t:
             return {"approved": True, "notes": ""}
         if "write one " in t and " post." in t:

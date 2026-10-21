@@ -177,6 +177,14 @@ CREATE TABLE IF NOT EXISTS questions (
   at TEXT NOT NULL,
   platform TEXT, url TEXT UNIQUE, title TEXT, guide TEXT, fit REAL, content_id INTEGER
 );
+CREATE TABLE IF NOT EXISTS deliverables (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,            -- plan | report | campaign
+  title TEXT NOT NULL,
+  data TEXT NOT NULL,
+  html_path TEXT, pdf_path TEXT
+);
 CREATE TABLE IF NOT EXISTS vectors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ref_table TEXT NOT NULL,
@@ -463,6 +471,23 @@ class Store:
 
     def list_questions(self, limit: int = 100) -> list[dict[str, Any]]:
         return self._rows("SELECT * FROM questions ORDER BY id DESC LIMIT ?", (limit,))
+
+    # ----------------------------------------------------------------- deliverables
+    def add_deliverable(self, kind: str, title: str, data: dict[str, Any], paths: dict[str, str]) -> int:
+        cur = self._exec("INSERT INTO deliverables(at,kind,title,data,html_path,pdf_path) VALUES(?,?,?,?,?,?)", (utcnow(), kind, title, json.dumps(data, default=str), paths.get("html", ""), paths.get("pdf", "")))
+        return int(cur.lastrowid)
+
+    def latest_deliverable(self, kind: str, title: str | None = None) -> dict[str, Any] | None:
+        rows = self._rows("SELECT * FROM deliverables WHERE kind=? AND title=? ORDER BY id DESC LIMIT 1", (kind, title)) if title else self._rows("SELECT * FROM deliverables WHERE kind=? ORDER BY id DESC LIMIT 1", (kind,))
+        if not rows:
+            return None
+        r = rows[0]
+        r["data"] = json.loads(r["data"])
+        return r
+
+    def list_deliverables(self, limit: int = 50) -> list[dict[str, Any]]:
+        rows = self._rows("SELECT id, at, kind, title, html_path, pdf_path FROM deliverables ORDER BY id DESC LIMIT ?", (limit,))
+        return rows
 
     # ----------------------------------------------------------------- site urls (IndexNow)
     def new_site_urls(self, urls: list[str]) -> list[str]:

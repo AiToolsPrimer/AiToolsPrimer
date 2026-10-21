@@ -474,11 +474,44 @@ class Director(Agent):
             self.office.set_phase(name)
         self.log(f"phase: {name}")
 
+    def briefing(self, voice: bool = False) -> dict[str, Any]:
+        """The morning briefing: yesterday, today, what waits for you. Text, and a spoken version if asked."""
+        queued = self.store.list_content(status="queued", limit=50)
+        ready = self.store.list_content(status="ready_to_click", limit=50)
+        published = [c for c in self.store.list_content(status="published", limit=100) if (c.get("published_at") or "") >= (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1)).isoformat()]
+        plan_items = []
+        deliverables = getattr(self, "deliverables", None)
+        if deliverables is not None:
+            plan_items = deliverables.items_for_day(dt.date.today())
+        lessons = [n["text"][:300] for n in self.store.recent_notes(5) if n["source"] == "analyst"]
+        with self.report("morning briefing"):
+            data = self.ask_json(
+                f"Write the morning briefing for the owner of {self.brand.name}, spoken style, under 180 words, English. "
+                f"Facts: published in the last 24 hours: {[(c['platform'], c['kind'], (c.get('title') or c.get('body') or '')[:60]) for c in published]}; "
+                f"waiting for approval: {len(queued)}; filled in the browser waiting for a click: {len(ready)}; today's plan: {plan_items[:8]}; analyst lessons: {lessons}. "
+                "No numbers other than these counts.\n"
+                'Return JSON: {"text": "..."}'
+            )
+        text = str(data.get("text", "")).strip() if isinstance(data, dict) else ""
+        self.store.add_note("briefing", text)
+        out: dict[str, Any] = {"text": text, "queued": len(queued), "ready_to_click": len(ready), "published_24h": len(published), "plan_today": plan_items}
+        if voice and self.video_agent is not None and text:
+            try:
+                path = self.video_agent.assembler.tts.speak(text, self.video_agent.assets_dir / "briefings" / f"{dt.date.today().isoformat()}.m4a")
+                out["audio"] = str(path)
+            except Exception as e:  # noqa: BLE001
+                out["audio_error"] = str(e)[:200]
+        return out
+
     def daily_cycle(self) -> dict[str, Any]:
         if not self.toggles.get("master_enabled"):
             return {"skipped": "master switch off"}
         self._phase("research")
         opportunities = self.strategist.opportunities()
+        deliverables = getattr(self, "deliverables", None)
+        planned = deliverables.items_for_day(dt.date.today()) if deliverables is not None else []
+        if planned:
+            opportunities = [{"topic": it.get("title", ""), "angle": f"series: {it.get('series', '')}", "why_now": "monthly plan", "guide_url": it.get("guide", ""), "formats": [it.get("kind", "post")], "platforms": it.get("platforms", []), "priority": 1} for it in planned] + opportunities
         self._phase(f"planning ({len(opportunities)} opportunities)")
         with self.report("planning the day"):
             plan = self.plan_day(opportunities)

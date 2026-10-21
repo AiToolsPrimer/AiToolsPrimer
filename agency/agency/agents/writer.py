@@ -27,6 +27,11 @@ class Writer(Agent):
     desk = "writer"
     temperature = 0.7
     kb = None  # KnowledgeBase, injected by the app
+    style_rules: list[str] = []   # distilled from the owner's corrections
+
+    def system(self, extra: str = "") -> str:
+        rules = ("\nHouse style rules learned from the owner's corrections:\n- " + "\n- ".join(self.style_rules)) if self.style_rules else ""
+        return super().system(extra + rules)
 
     def rules_for(self, platform: str) -> str:
         if self.kb is not None:

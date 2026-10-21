@@ -14,6 +14,9 @@ from agency.agents.mail import MailAgent, Mailbox
 from agency.agents.network import NetworkAgent
 from agency.agents.pr import PRAgent
 from agency.agents.questions import QuestionsAgent
+from agency.agents.learning import Learning
+from agency.deliverables import Deliverables
+from agency.notify import notify
 from agency.agents.community import CommunityManager
 from agency.agents.creative import ImageAgent, VideoAgent
 from agency.agents.factcheck import FactChecker
@@ -141,7 +144,13 @@ class Agency:
         self.questions = QuestionsAgent(self.brain, self.store, brand, self.http, factcheck=self.factcheck)
         self.director.community, self.director.scout, self.director.analyst = self.community, self.scout, self.analyst
         self.director.mail, self.director.pr, self.director.network, self.director.questions = self.mail, self.pr, self.network, self.questions
-        for agent in (self.director, self.writer, self.second_writer, self.strategist, self.safety, self.factcheck, self.image_agent, self.video_agent, self.community, self.scout, self.analyst, self.news_watch, self.mail, self.pr, self.network, self.questions):
+        self.deliverables = Deliverables(self.brain, self.store, brand, self.assets_dir / "deliverables", kb=self.kb, settings=s)
+        self.learning = Learning(self.brain, self.store, brand, self.state_dir / "learning")
+        self.writer.style_rules = self.learning.current_rules()
+        if self.second_writer is not None:
+            self.second_writer.style_rules = self.writer.style_rules
+        self.director.deliverables = self.deliverables
+        for agent in (self.director, self.writer, self.second_writer, self.strategist, self.safety, self.factcheck, self.image_agent, self.video_agent, self.community, self.scout, self.analyst, self.news_watch, self.mail, self.pr, self.network, self.questions, self.deliverables, self.learning):
             if agent is not None:
                 agent.office = self.office
         if self.second_writer is not None:
@@ -186,6 +195,25 @@ class Agency:
         self.events.append(f"{stamp} {msg}")
         self.events = self.events[-300:]
         log.info(msg)
+        if msg.startswith(("FAILED", "published ", "KILL")):
+            notify("Agency", msg)
+
+    def refresh_style(self) -> list[str]:
+        rules = self.learning.style_rules()
+        self.writer.style_rules = rules
+        if self.second_writer is not None:
+            self.second_writer.style_rules = rules
+        return rules
+
+    def monthly_deliverables(self) -> dict[str, Any]:
+        """First of the month: last month's report and this month's plan."""
+        today = dt.date.today()
+        last = (today.replace(day=1) - dt.timedelta(days=1))
+        platforms = [n for n, p in self.platforms.items() if self.toggles.platform_enabled(n) and (p.configured() or self.dry_run) and self.mode_for(n) != "off"]
+        report = self.deliverables.monthly_report(last.year, last.month)
+        plan = self.deliverables.monthly_plan(today.year, today.month, platforms)
+        notify("Agency", f"Monthly report and plan for {today:%B} are ready")
+        return {"report": report.get("pdf") or report.get("html"), "plan": plan.get("pdf") or plan.get("html")}
 
     def _model_event(self, e: dict[str, Any]) -> None:
         self.office.model_event(e)
