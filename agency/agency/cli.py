@@ -8,7 +8,20 @@ import shutil
 import sys
 from pathlib import Path
 
-from agency.settings import CONFIG_DIR, ROOT, STATE_DIR
+from agency.settings import ASSETS_DIR, CONFIG_DIR, ROOT, STATE_DIR
+
+
+def _client_dirs(args: argparse.Namespace) -> dict:
+    """A client is a config file plus its own state and assets: config/clients/<name>.yaml, state/<name>/, assets/<name>/."""
+    name = getattr(args, "client", None)
+    if not name:
+        return {}
+    from agency.settings import Settings
+
+    cfg = CONFIG_DIR / "clients" / f"{name}.yaml"
+    if not cfg.exists():
+        raise SystemExit(f"no client config at {cfg}; create it from config/agency.example.yaml (brand, handles, platforms)")
+    return {"settings": Settings.load(cfg), "state_dir": STATE_DIR / name, "assets_dir": ASSETS_DIR / name}
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -32,7 +45,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     from agency.app import Agency
     from agency.models import registry
 
-    a = Agency(dry_run=True)
+    a = Agency(dry_run=True, **_client_dirs(args))
     s = a.settings
     ok = True
 
@@ -63,7 +76,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     row("brain choice", chosen is not None, f"{chosen} (benchmarked on this Mac)" if chosen else "not benchmarked yet: run `agency doctor --benchmark` (loads each brain candidate once, a few minutes)")
     if getattr(args, "benchmark", False):
         print("Benchmarking brain candidates (one at a time)...")
-        live = Agency(dry_run=False)
+        live = Agency(dry_run=False, **_client_dirs(args))
         out = live.benchmark_brains()
         for r in out["results"]:
             print(f"  - {r['model']:24s} {'ok' if r.get('ok') else 'FAILED'}  {r.get('tokens_per_s', '-')} tok/s  {r.get('error', '')[:120]}")
@@ -87,7 +100,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from agency.panel.app import create_app
     from agency.scheduler.runner import build
 
-    a = Agency(dry_run=args.dry_run or None)
+    a = Agency(dry_run=args.dry_run or None, **_client_dirs(args))
     app = create_app(a)
     sched = build(a)
     if not args.no_schedule:
@@ -101,7 +114,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_cycle(args: argparse.Namespace) -> int:
     from agency.app import Agency
 
-    a = Agency(dry_run=True if args.dry_run else None)
+    a = Agency(dry_run=True if args.dry_run else None, **_client_dirs(args))
     out = a.director.daily_cycle()
     print(json.dumps({k: v for k, v in out.items() if k != "opportunities"}, indent=2, default=str))
     return 0
@@ -110,7 +123,7 @@ def cmd_cycle(args: argparse.Namespace) -> int:
 def cmd_video(args: argparse.Namespace) -> int:
     from agency.app import Agency
 
-    a = Agency(dry_run=True if args.dry_run else None)
+    a = Agency(dry_run=True if args.dry_run else None, **_client_dirs(args))
     ids = a.director.produce_video(args.topic, args.angle, link=args.link, target_seconds=args.seconds)
     for cid in ids:
         row = a.store.get_content(cid)
@@ -121,7 +134,7 @@ def cmd_video(args: argparse.Namespace) -> int:
 def cmd_post(args: argparse.Namespace) -> int:
     from agency.app import Agency
 
-    a = Agency(dry_run=True if args.dry_run else None)
+    a = Agency(dry_run=True if args.dry_run else None, **_client_dirs(args))
     cid = a.director.produce_post(args.platform, args.topic, args.angle, link=args.link, with_image=args.image)
     row = a.store.get_content(cid)
     print(f"#{cid} {row['platform']} -> {row['status']}\n\n{row['body']}")
@@ -132,7 +145,7 @@ def cmd_chrome_login(args: argparse.Namespace) -> int:
     """Open the agent's own Chrome on the login pages so you can sign in once (cookies stay in state/chrome-profile)."""
     from agency.app import Agency
 
-    a = Agency(dry_run=True)
+    a = Agency(dry_run=True, **_client_dirs(args))
     a.operator.dry_run = False
     a.operator.headless = False
     opened = a.operator.open_logins(args.platforms or None)
@@ -148,7 +161,7 @@ def cmd_chrome_login(args: argparse.Namespace) -> int:
 def cmd_briefing(args: argparse.Namespace) -> int:
     from agency.app import Agency
 
-    a = Agency(dry_run=True if args.dry_run else None)
+    a = Agency(dry_run=True if args.dry_run else None, **_client_dirs(args))
     out = a.director.briefing(voice=args.voice)
     print(out["text"])
     if out.get("audio"):
@@ -161,7 +174,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
     from agency.app import Agency
 
-    a = Agency(dry_run=True if args.dry_run else None)
+    a = Agency(dry_run=True if args.dry_run else None, **_client_dirs(args))
     today = dt.date.today()
     platforms = [n for n, p in a.platforms.items() if a.toggles.platform_enabled(n) and a.mode_for(n) != "off"]
     if args.what == "plan":
@@ -177,7 +190,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
 def cmd_outreach(args: argparse.Namespace) -> int:
     from agency.app import Agency
 
-    a = Agency(dry_run=True if args.dry_run else None)
+    a = Agency(dry_run=True if args.dry_run else None, **_client_dirs(args))
     fns = {"network": a.director.network_cycle, "mail": a.director.mail_cycle, "pr": a.director.pr_cycle, "questions": a.director.questions_cycle, "scout": a.director.scout_cycle, "news": a.news_watch.run, "style": a.refresh_style}
     print(json.dumps(fns[args.what](), indent=2, default=str))
     return 0
@@ -186,7 +199,7 @@ def cmd_outreach(args: argparse.Namespace) -> int:
 def cmd_queue(args: argparse.Namespace) -> int:
     from agency.app import Agency
 
-    a = Agency(dry_run=True)
+    a = Agency(dry_run=True, **_client_dirs(args))
     for c in a.store.list_content(status="queued"):
         print(f"#{c['id']:4d} {c['kind']:8s} {c['platform']:10s} {(c['title'] or c['body'])[:70]}")
     return 0
@@ -195,7 +208,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
 def cmd_approve(args: argparse.Namespace) -> int:
     from agency.app import Agency
 
-    a = Agency()
+    a = Agency(**_client_dirs(args))
     d = a.director.approve(args.id)
     print(d.verdict.value, d.reason)
     return 0 if d.allowed else 1
@@ -217,6 +230,7 @@ def cmd_toggle(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     ap = argparse.ArgumentParser(prog="agency", description="Local, token-free AI marketing agency")
+    ap.add_argument("--client", default="", help="run for another client: config/clients/<name>.yaml with its own state and assets (default: config/agency.yaml)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("init", help="create config/agency.yaml and .env").set_defaults(fn=cmd_init)
     p = sub.add_parser("doctor", help="check tools, servers, models and platforms")

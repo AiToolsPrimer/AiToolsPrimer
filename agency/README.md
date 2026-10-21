@@ -97,6 +97,11 @@ agency queue / agency approve 12 / agency toggle publishing on
 agency doctor [--benchmark] / agency chrome-login x
 ```
 
+## More than one client
+
+`agency --client <name> run` serves another site from `config/clients/<name>.yaml` with its own state,
+assets and dashboard port; models and knowledge are shared. See [config/clients/README.md](config/clients/README.md).
+
 ## Tests
 
 ```bash
