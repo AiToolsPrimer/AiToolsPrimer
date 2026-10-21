@@ -49,7 +49,7 @@ def test_safety_rejects_external_links_and_placeholders(agency):
 
 
 def test_video_length_up_to_four_minutes(agency):
-    ids = agency.director.produce_video("free PDF editors", "tested", target_seconds=240)
+    ids = agency.director.produce_video("free PDF editors", "tested", link="https://aitoolsprimer.com/pdf", target_seconds=240)
     video = next(agency.store.get_content(i) for i in ids if agency.store.get_content(i)["kind"] == "video")
     assert 100 <= video["meta"]["seconds"] <= 240
     shorts = [agency.store.get_content(i) for i in ids if agency.store.get_content(i)["kind"] == "short"]
@@ -81,6 +81,11 @@ def test_community_replies_go_through_policy(agency):
     queued = agency.store.list_content(status="queued")
     assert len(queued) == 1 and queued[0]["kind"] == "reply"
     assert agency.store.pending_engagement() and len(agency.store.pending_engagement()) == 1
+
+
+def test_video_without_a_guide_is_dropped_by_the_fact_check(agency):
+    # no link -> no verified facts -> promise words like "free" and "tested" cannot survive -> no video
+    assert agency.director.produce_video("free PDF editors", "tested", target_seconds=60) == []
 
 
 def test_kill_switch_stops_cycles(agency):

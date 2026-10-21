@@ -107,6 +107,20 @@ CREATE TABLE IF NOT EXISTS knowledge_checks (
   platform TEXT PRIMARY KEY,
   checked_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS facts (
+  url TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  facts TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS corrections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  content_id INTEGER,
+  platform TEXT,
+  kind TEXT,
+  original TEXT NOT NULL,
+  edited TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS vectors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ref_table TEXT NOT NULL,
@@ -264,6 +278,28 @@ class Store:
         for r in rows:
             r["signup_kit"] = json.loads(r["signup_kit"]) if r.get("signup_kit") else None
         return rows
+
+    # ----------------------------------------------------------------- facts & corrections
+    def get_facts(self, url: str, max_age_days: int = 14) -> list[dict[str, Any]] | None:
+        rows = self._rows("SELECT * FROM facts WHERE url=?", (url,))
+        if not rows:
+            return None
+        if rows[0]["at"] < (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max_age_days)).isoformat():
+            return None
+        return json.loads(rows[0]["facts"])
+
+    def set_facts(self, url: str, facts: list[dict[str, Any]]) -> None:
+        self._exec("INSERT INTO facts(url,at,facts) VALUES(?,?,?) ON CONFLICT(url) DO UPDATE SET at=excluded.at, facts=excluded.facts", (url, utcnow(), json.dumps(facts)))
+
+    def add_correction(self, content_id: int | None, platform: str, kind: str, original: str, edited: str) -> int:
+        cur = self._exec("INSERT INTO corrections(at,content_id,platform,kind,original,edited) VALUES(?,?,?,?,?,?)", (utcnow(), content_id, platform, kind, original, edited))
+        return int(cur.lastrowid)
+
+    def list_corrections(self, limit: int = 500) -> list[dict[str, Any]]:
+        return self._rows("SELECT * FROM corrections ORDER BY id DESC LIMIT ?", (limit,))
+
+    def count_corrections(self) -> int:
+        return int(self._rows("SELECT COUNT(*) AS n FROM corrections")[0]["n"])
 
     # ----------------------------------------------------------------- knowledge
     def add_knowledge_update(self, platform: str, summary: str, field: str, new_value: str, source: str, confidence: float) -> int | None:

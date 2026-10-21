@@ -62,9 +62,16 @@ class VideoAgent(Agent):
         super().__init__(llm, store, brand)
         self.writer, self.assembler, self.assets_dir, self.max_seconds = writer, assembler, assets_dir, max_seconds
 
-    def produce(self, topic: str, angle: str, target_seconds: int | None = None, link: str = "", facts: str = "", presenter: bool = False, with_shorts: bool = True) -> dict[str, Any]:
+    def produce(self, topic: str, angle: str, target_seconds: int | None = None, link: str = "", facts: str = "", presenter: bool = False, with_shorts: bool = True, verifier=None) -> dict[str, Any] | None:
         target = min(target_seconds or self.max_seconds, self.max_seconds)
         script = self.writer.video_script(topic, angle, target, link=link, facts=facts, presenter=presenter)
+        factcheck = None
+        if verifier is not None:
+            scenes, removed = verifier(script.get("scenes", []))
+            factcheck = {"removed": removed, "scenes_kept": len(scenes), "scenes_written": len(script.get("scenes", []))}
+            if not scenes:
+                return None
+            script["scenes"] = scenes
         plan = VideoPlan.from_json(script, self.max_seconds, default_mode=self.assembler.d.default_visual_mode)
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         workdir = self.assets_dir / "video" / f"{stamp}-{_slug(topic)}"
@@ -74,4 +81,4 @@ class VideoAgent(Agent):
         script_path.write_text(json.dumps(script, indent=2))
         video_id = self.store.add_asset("video", result["video"], prompt=topic, model=self.assembler.video_spec.name, meta={"seconds": result["seconds"], "scenes": result["scenes"], "srt": str(result["srt"]), "thumbnail": str(result["thumbnail"]), "script": str(script_path)})
         short_ids = [self.store.add_asset("video", p, prompt=f"short of {topic}", model=self.assembler.video_spec.name, meta={"short": True, "parent": video_id}) for p in result.get("shorts", [])]
-        return {"asset_id": video_id, "short_asset_ids": short_ids, "title": script.get("title", topic), "description": script.get("description", ""), "tags": script.get("tags", []), "seconds": result["seconds"], "thumbnail": result["thumbnail"], "workdir": workdir}
+        return {"asset_id": video_id, "short_asset_ids": short_ids, "title": script.get("title", topic), "description": script.get("description", ""), "tags": script.get("tags", []), "seconds": result["seconds"], "thumbnail": result["thumbnail"], "workdir": workdir, "factcheck": factcheck}

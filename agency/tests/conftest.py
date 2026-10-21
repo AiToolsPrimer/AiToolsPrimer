@@ -49,7 +49,24 @@ class FakeLLM:
             target = int(m.group(1)) if m else 60
             n = max(3, target // 10)
             return {"title": "Free PDF editors tested", "description": "We tested them. Guide: https://aitoolsprimer.com/pdf", "tags": ["pdf", "tools"], "music_prompt": "calm bed",
-                    "scenes": [{"narration": "Scene number " + str(i) + " with a sentence of narration that lasts a few seconds.", "visual_prompt": "desk", "mode": "image_motion", "seconds": 8} for i in range(n)]}
+                    "scenes": [{"narration": "Scene " + ["one", "two", "three", "four"][i % 4] + " says that we tested five free PDF editors on a real contract and two added a watermark.", "visual_prompt": "desk", "mode": "image_motion", "seconds": 8} for i in range(n)]}
+        if "extract every atomic fact" in t:
+            return {"facts": [{"id": "F1", "fact": "We tested five free PDF editors on a real contract", "quote": "we tested five free PDF editors on a real contract", "kind": "method"},
+                              {"id": "F2", "fact": "Two of the five editors added a watermark after the trial", "quote": "two added a watermark", "kind": "verdict"},
+                              {"id": "F3", "fact": "Checked on 15 October 2026", "quote": "checked 15 October 2026", "kind": "date"}]}
+        if "for each sentence decide" in t or "there are no verified facts" in t:
+            verdicts = []
+            for m in re.finditer(r"s(\d+): (.+)", t):
+                sent = m.group(2)
+                if "unsupported" in sent or "guaranteed" in sent or "cures" in sent:
+                    verdicts.append({"id": f"S{m.group(1)}", "verdict": "unsupported", "why": "not in the guide"})
+                elif sent.strip().endswith("?") or "guide" in sent:
+                    verdicts.append({"id": f"S{m.group(1)}", "verdict": "no_claim", "why": ""})
+                else:
+                    verdicts.append({"id": f"S{m.group(1)}", "verdict": "supported" if "facts from the source guide" in t else "no_claim", "facts": ["F1"], "why": ""})
+            return {"verdicts": verdicts}
+        if "choose the strongest draft" in t:
+            return {"chosen": 0, "why": "first"}
         if "you are reviewing a" in t:
             return {"approved": True, "notes": ""}
         if "write one " in t and " post." in t:
@@ -78,6 +95,24 @@ def fake_llm():
     return FakeLLM()
 
 
+GUIDE_HTML = """<html><head><title>Five free PDF editors tested</title></head><body><nav>menu</nav>
+<h1>Five free PDF editors tested on a real contract</h1><p>We tested five free PDF editors on a real contract. Two added a watermark after the trial.</p>
+<p>Checked 15 October 2026.</p><footer>footer</footer></body></html>"""
+
+
+def mock_transport():
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "aitoolsprimer.com":
+            if request.url.path == "/sitemap.xml":
+                return httpx.Response(200, text="<urlset><url><loc>https://aitoolsprimer.com/pdf</loc></url></urlset>")
+            return httpx.Response(200, text=GUIDE_HTML, headers={"content-type": "text/html"})
+        return httpx.Response(404, text="not found")
+
+    return httpx.MockTransport(handler)
+
+
 @pytest.fixture
 def agency(tmp_path, fake_llm):
     from agency.app import Agency
@@ -85,5 +120,5 @@ def agency(tmp_path, fake_llm):
 
     s = Settings(video=VideoDefaults(width=320, height=180, fps=8, max_seconds=240, shorts_seconds=5))
     s.limits.quiet_hours_utc = (25, 25)  # never
-    a = Agency(settings=s, dry_run=True, llm=fake_llm, state_dir=tmp_path / "state", assets_dir=tmp_path / "assets")
+    a = Agency(settings=s, dry_run=True, llm=fake_llm, state_dir=tmp_path / "state", assets_dir=tmp_path / "assets", http_transport=mock_transport())
     return a

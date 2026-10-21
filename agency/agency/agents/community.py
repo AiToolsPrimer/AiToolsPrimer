@@ -13,9 +13,9 @@ from agency.safety.policy import Action, ActionKind, Decision
 class CommunityManager(Agent):
     role = "community manager"
 
-    def __init__(self, llm, store, brand, writer: Writer, platforms: dict[str, Platform], submit: Callable[[Action, dict[str, Any]], Decision], safety=None):
+    def __init__(self, llm, store, brand, writer: Writer, platforms: dict[str, Platform], submit: Callable[[Action, dict[str, Any]], Decision], safety=None, factcheck=None):
         super().__init__(llm, store, brand)
-        self.writer, self.platforms, self.submit, self.safety = writer, platforms, submit, safety
+        self.writer, self.platforms, self.submit, self.safety, self.factcheck = writer, platforms, submit, safety, factcheck
 
     def collect(self, days: int = 14) -> int:
         since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).isoformat()
@@ -44,6 +44,14 @@ class CommunityManager(Agent):
                 self.store.mark_replied(e["id"])
                 results.append({"engagement": e["id"], "skipped": draft.get("reason", "")})
                 continue
+            if self.factcheck:
+                facts = self.factcheck.facts_for((post.get("meta") or {}).get("link", ""))
+                r = self.factcheck.verify(draft["text"], facts, kind="reply")
+                if not r.ok:
+                    self.store.mark_replied(e["id"])
+                    results.append({"engagement": e["id"], "verdict": "deny", "reason": "reply failed the fact check"})
+                    continue
+                draft["text"] = r.text
             verdict = self.safety.check(draft["text"]) if self.safety else None
             if verdict is not None and not verdict.ok:
                 results.append({"engagement": e["id"], "verdict": "deny", "reason": f"safety: {verdict.reason}"})

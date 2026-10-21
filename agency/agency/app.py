@@ -9,7 +9,9 @@ from typing import Any
 from agency.agents.analyst import Analyst
 from agency.agents.community import CommunityManager
 from agency.agents.creative import ImageAgent, VideoAgent
+from agency.agents.factcheck import FactChecker
 from agency.agents.safety import Safety
+from agency.agents.team import Team
 from agency.agents.scout import Scout
 from agency.agents.strategist import Strategist
 from agency.agents.writer import Writer
@@ -35,7 +37,7 @@ log = logging.getLogger("agency")
 
 
 class Agency:
-    def __init__(self, settings: Settings | None = None, *, dry_run: bool | None = None, llm: Any = None, state_dir: Path | None = None, assets_dir: Path | None = None):
+    def __init__(self, settings: Settings | None = None, *, dry_run: bool | None = None, llm: Any = None, state_dir: Path | None = None, assets_dir: Path | None = None, http_transport: Any = None):
         self.settings = settings or Settings.load()
         self.dry_run = self.settings.dry_run if dry_run is None else dry_run
         self.state_dir = state_dir or STATE_DIR
@@ -67,7 +69,7 @@ class Agency:
         # ---------------------------------------------------------------- memory & network
         embed = None if (llm is not None or self.dry_run) else (lambda texts: self.embed_llm.embed(texts))
         self.store = Store(self.state_dir / "agency.db", embed=embed)
-        self.http = GuardedHTTP(audit=self.store.audit_http)
+        self.http = GuardedHTTP(audit=self.store.audit_http, transport=http_transport)
         self.platforms = build_all(s, self.http, dry_run=self.dry_run)
 
         # ---------------------------------------------------------------- media
@@ -91,6 +93,12 @@ class Agency:
         brand = s.brand
         self.writer = Writer(self.brain, self.store, brand)
         self.writer.kb = self.kb
+        self.second_writer = None
+        if llm is None and s.models.team_mode == "team":
+            self.second_writer = Writer(self.second, self.store, brand)
+            self.second_writer.kb = self.kb
+        self.team = Team(self.writer, self.second_writer, judge=self.brain, mode=s.models.team_mode, candidates=s.models.candidates_per_draft)
+        self.factcheck = FactChecker(self.brain, self.store, brand, self.http)
         self.strategist = Strategist(self.brain, self.store, brand, self.http)
         self.safety = Safety(self.brain, self.store, brand, guard=self.guard_llm if llm is None else None)
         self.image_agent = ImageAgent(self.brain, self.store, brand, self.images, self.assets_dir, vision=self.brain)
@@ -98,10 +106,11 @@ class Agency:
         self.policy = PolicyEngine(self.toggles, s.limits, count_recent=lambda platform, kind, window: self.store.count_recent_actions(platform, kind.value, window))
         self.director = Director(
             llm=self.director_llm, store=self.store, settings=s, toggles=self.toggles, policy=self.policy, platforms=self.platforms,
-            strategist=self.strategist, writer=self.writer, safety=self.safety, image_agent=self.image_agent, video_agent=self.video_agent, kb=self.kb, log=self.note,
+            strategist=self.strategist, writer=self.writer, safety=self.safety, image_agent=self.image_agent, video_agent=self.video_agent, kb=self.kb,
+            factcheck=self.factcheck, team=self.team, log=self.note,
         )
         self.news_watch = NewsWatch(self.brain, self.store, brand, self.http, self.kb)
-        self.community = CommunityManager(self.brain, self.store, brand, self.writer, self.platforms, self.director.submit, safety=self.safety)
+        self.community = CommunityManager(self.brain, self.store, brand, self.writer, self.platforms, self.director.submit, safety=self.safety, factcheck=self.factcheck)
         self.scout = Scout(self.brain, self.store, brand, self.http, self.director.submit, image_agent=self.image_agent)
         self.analyst = Analyst(self.brain, self.store, brand, self.platforms, self.director.submit)
         self.director.community, self.director.scout, self.director.analyst = self.community, self.scout, self.analyst

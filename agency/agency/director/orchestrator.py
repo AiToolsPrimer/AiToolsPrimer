@@ -14,7 +14,9 @@ from agency.agents.analyst import Analyst
 from agency.agents.base import Agent
 from agency.agents.community import CommunityManager
 from agency.agents.creative import ImageAgent, VideoAgent
+from agency.agents.factcheck import FactChecker
 from agency.agents.safety import Safety
+from agency.agents.team import Team
 from agency.agents.scout import Scout
 from agency.agents.strategist import Strategist
 from agency.agents.writer import Writer
@@ -55,10 +57,12 @@ class Director(Agent):
         scout: Scout | None = None,
         analyst: Analyst | None = None,
         kb: KnowledgeBase | None = None,
+        factcheck: FactChecker | None = None,
+        team: Team | None = None,
         log: Callable[[str], None] | None = None,
     ):
         super().__init__(llm, store, settings.brand)
-        self.kb = kb
+        self.kb, self.factcheck, self.team = kb, factcheck, team
         self.settings, self.toggles, self.policy, self.platforms = settings, toggles, policy, platforms
         self.strategist, self.writer, self.safety = strategist, writer, safety
         self.image_agent, self.video_agent = image_agent, video_agent
@@ -122,7 +126,8 @@ class Director(Agent):
         row = self.store.get_content(cid)
         if not row:
             return Decision(Verdict.DENY, "no such content")
-        if edited_body is not None:
+        if edited_body is not None and edited_body.strip() != (row.get("body") or "").strip():
+            self.store.add_correction(cid, row["platform"], row["kind"], row.get("body") or "", edited_body)
             self.store.update_content(cid, body=edited_body)
             row["body"] = edited_body
         verdict = self.safety.check(row.get("body") or row.get("title") or "", facts_supplied=bool(row["meta"].get("facts")))
@@ -187,13 +192,47 @@ class Director(Agent):
         )
         return "" if data.get("approved") else (data.get("notes") or "tighten and verify")
 
+    def _facts(self, link: str, facts: str) -> tuple[list[dict[str, Any]], str]:
+        """Verified facts for a guide URL (fetched and cached by the fact checker)."""
+        if facts:
+            return [], facts
+        if self.factcheck and link:
+            fl = self.factcheck.facts_for(link)
+            return fl, FactChecker.facts_text(fl)
+        return [], ""
+
+    def _compose(self, kind: str, platform: str, brief: str, make):
+        if self.team is not None:
+            return self.team.compose(kind, platform, brief, make)
+        return make(self.writer)
+
+    def _verify(self, cid_hint: str, text: str, facts_list: list[dict[str, Any]], kind: str) -> tuple[str, dict[str, Any] | None, str]:
+        """Returns (clean_text, report, reject_reason)."""
+        if not self.factcheck:
+            return text, None, ""
+        r = self.factcheck.verify(text, facts_list, kind=kind)
+        if not r.language_ok:
+            return "", r.report(), "not English"
+        if not r.text.strip():
+            return "", r.report(), "nothing survived the fact check: " + "; ".join(x["reason"] for x in r.removed[:3])
+        if r.removed:
+            self.log(f"fact check on {cid_hint}: removed {len(r.removed)} sentence(s)")
+        return r.text, r.report(), ""
+
     def produce_post(self, platform: str, topic: str, angle: str, link: str = "", facts: str = "", with_image: bool = False, when_utc: str | None = None) -> int:
-        draft = self.writer.post(platform, topic, angle, link=link, facts=facts, with_image=with_image)
+        facts_list, facts = self._facts(link, facts)
+        brief = f"topic: {topic}; angle: {angle}; link: {link}"
+        draft = self._compose("post", platform, brief, lambda w: w.post(platform, topic, angle, link=link, facts=facts, with_image=with_image))
         for _ in range(self.settings.limits.max_revisions):
             notes = self.review("post", draft, platform)
             if not notes:
                 break
             draft = self.writer.revise("post", draft, notes)
+        clean, report, reject = self._verify(f"{platform} post '{topic[:40]}'", draft.get("text", ""), facts_list, "post")
+        if reject:
+            cid = self.store.add_content("post", platform, topic=topic, title=draft.get("title", topic), body=draft.get("text", ""), status="rejected", meta={"link": link, "reject_reason": f"fact check: {reject}", "factcheck": report})
+            return cid
+        draft["text"] = clean
         assets: list[int] = []
         alt: list[str] = []
         if with_image and self.image_agent and self.toggles.get("make_images"):
@@ -203,36 +242,46 @@ class Director(Agent):
             except Exception as e:  # noqa: BLE001
                 self.log(f"image failed for {topic}: {e}")
         kind = "image" if platform in IMAGE_PLATFORMS else "post"
-        cid = self.store.add_content(kind, platform, topic=topic, title=draft.get("title", topic), body=draft["text"], assets=assets, status="draft", scheduled_for=when_utc, meta={"link": link, "tags": draft.get("tags", []), "alt_texts": alt, "facts": facts, "angle": angle})
+        cid = self.store.add_content(kind, platform, topic=topic, title=draft.get("title", topic), body=draft["text"], assets=assets, status="draft", scheduled_for=when_utc, meta={"link": link, "tags": draft.get("tags", []), "alt_texts": alt, "facts": facts, "angle": angle, "factcheck": report, "team": draft.get("_team")})
         self._gate(cid)
         return cid
 
     def produce_article(self, platform: str, topic: str, angle: str, link: str = "", facts: str = "", when_utc: str | None = None) -> int:
-        draft = self.writer.article(topic, angle, link=link, facts=facts, platform=platform)
+        facts_list, facts = self._facts(link, facts)
+        draft = self._compose("article", platform, f"topic: {topic}; angle: {angle}; link: {link}", lambda w: w.article(topic, angle, link=link, facts=facts, platform=platform))
         for _ in range(self.settings.limits.max_revisions):
             notes = self.review("article", {"title": draft.get("title"), "markdown": draft.get("markdown", "")[:5000]}, platform)
             if not notes:
                 break
             draft = self.writer.revise("article", draft, notes)
+        clean, report, reject = self._verify(f"{platform} article '{topic[:40]}'", draft.get("markdown", ""), facts_list, "article")
+        if reject:
+            return self.store.add_content("article", platform, topic=topic, title=draft.get("title", topic), body=draft.get("markdown", ""), status="rejected", meta={"link": link, "reject_reason": f"fact check: {reject}", "factcheck": report})
+        draft["markdown"] = clean
         assets: list[int] = []
         if self.image_agent and self.toggles.get("make_images"):
             try:
                 assets.append(self.image_agent.make(draft.get("cover_prompt") or topic, size="og", topic=topic))
             except Exception as e:  # noqa: BLE001
                 self.log(f"cover failed for {topic}: {e}")
-        cid = self.store.add_content("article", platform, topic=topic, title=draft["title"], body=draft["markdown"], assets=assets, status="draft", scheduled_for=when_utc, meta={"link": link, "tags": draft.get("tags", []), "facts": facts, "extra": {"excerpt": draft.get("excerpt", "")}})
+        cid = self.store.add_content("article", platform, topic=topic, title=draft["title"], body=draft["markdown"], assets=assets, status="draft", scheduled_for=when_utc, meta={"link": link, "tags": draft.get("tags", []), "facts": facts, "extra": {"excerpt": draft.get("excerpt", "")}, "factcheck": report, "team": draft.get("_team")})
         self._gate(cid)
         return cid
 
     def produce_video(self, topic: str, angle: str, link: str = "", facts: str = "", target_seconds: int | None = None, platforms: tuple[str, ...] = VIDEO_PLATFORMS, when_utc: str | None = None) -> list[int]:
         if not self.video_agent:
             return []
-        out = self.video_agent.produce(topic, angle, target_seconds=target_seconds, link=link, facts=facts, with_shorts=self.toggles.get("make_shorts"))
+        facts_list, facts = self._facts(link, facts)
+        verifier = (lambda scenes: self.factcheck.verify_scenes(scenes, facts_list)) if self.factcheck else None
+        out = self.video_agent.produce(topic, angle, target_seconds=target_seconds, link=link, facts=facts, with_shorts=self.toggles.get("make_shorts"), verifier=verifier)
+        if not out:
+            self.log(f"video '{topic[:40]}' dropped: nothing survived the fact check")
+            return []
         ids = []
         for platform in platforms:
             if platform not in self.platforms:
                 continue
-            cid = self.store.add_content("video", platform, topic=topic, title=out["title"], body=out["description"], assets=[out["asset_id"]], status="draft", scheduled_for=when_utc, meta={"link": link, "tags": out["tags"], "facts": facts, "thumbnail": str(out["thumbnail"]), "seconds": out["seconds"]})
+            cid = self.store.add_content("video", platform, topic=topic, title=out["title"], body=out["description"], assets=[out["asset_id"]], status="draft", scheduled_for=when_utc, meta={"link": link, "tags": out["tags"], "facts": facts, "thumbnail": str(out["thumbnail"]), "seconds": out["seconds"], "factcheck": out.get("factcheck")})
             self._gate(cid)
             ids.append(cid)
         for n, sid in enumerate(out.get("short_asset_ids", [])):
