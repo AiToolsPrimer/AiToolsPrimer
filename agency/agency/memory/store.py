@@ -126,6 +126,57 @@ CREATE TABLE IF NOT EXISTS site_urls (
   first_seen TEXT NOT NULL,
   submitted_at TEXT
 );
+CREATE TABLE IF NOT EXISTS authority (
+  domain TEXT PRIMARY KEY,
+  rank INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS authority_meta (k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS mail (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uid TEXT UNIQUE,
+  at TEXT NOT NULL,
+  sender TEXT, sender_name TEXT, subject TEXT, received TEXT,
+  category TEXT, summary TEXT, urgent INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS mail_drafts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  mail_id INTEGER,
+  to_addr TEXT, subject TEXT, body TEXT,
+  status TEXT NOT NULL            -- drafted | in_gmail_drafts | dismissed
+);
+CREATE TABLE IF NOT EXISTS pr_opportunities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,             -- journalist_request | unlinked_mention | broken_link
+  source TEXT NOT NULL,
+  contact TEXT, summary TEXT, detail TEXT, deadline TEXT,
+  fit REAL, extra TEXT,
+  pitch_subject TEXT, pitch_body TEXT,
+  status TEXT NOT NULL,           -- found | pitched | sent | dismissed
+  UNIQUE(kind, source, summary)
+);
+CREATE TABLE IF NOT EXISTS network_sources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,             -- site | account
+  name TEXT, url TEXT UNIQUE, platform TEXT, feed_url TEXT,
+  domain_rank INTEGER, relevance REAL, why TEXT,
+  status TEXT NOT NULL            -- suggested | following | dismissed
+);
+CREATE TABLE IF NOT EXISTS network_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  seen_at TEXT NOT NULL,
+  source_id INTEGER NOT NULL,
+  url TEXT UNIQUE, title TEXT, published TEXT, remote_id TEXT,
+  status TEXT NOT NULL,           -- new | drafted | skipped | commented
+  content_id INTEGER
+);
+CREATE TABLE IF NOT EXISTS questions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  platform TEXT, url TEXT UNIQUE, title TEXT, guide TEXT, fit REAL, content_id INTEGER
+);
 CREATE TABLE IF NOT EXISTS vectors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ref_table TEXT NOT NULL,
@@ -222,7 +273,7 @@ class Store:
         since = (dt.datetime.now(dt.timezone.utc) - window).isoformat()
         if platform == "*browser*":
             # only real clicks count (the approval that merely fills the page carries no human_click flag)
-            rows = self._rows("SELECT COUNT(*) AS n FROM actions WHERE kind IN ('browser_publish','browser_comment') AND verdict=? AND at>=? AND payload LIKE '%\"human_click\": true%'", (verdict, since))
+            rows = self._rows("SELECT COUNT(*) AS n FROM actions WHERE kind IN ('browser_publish','browser_comment','external_comment') AND verdict=? AND at>=? AND payload LIKE '%\"human_click\": true%'", (verdict, since))
         elif platform == "*":
             rows = self._rows("SELECT COUNT(*) AS n FROM actions WHERE kind=? AND verdict=? AND at>=?", (kind, verdict, since))
         else:
@@ -289,6 +340,129 @@ class Store:
         for r in rows:
             r["signup_kit"] = json.loads(r["signup_kit"]) if r.get("signup_kit") else None
         return rows
+
+    # ----------------------------------------------------------------- authority (Tranco)
+    def authority_rank(self, domain: str) -> int | None:
+        rows = self._rows("SELECT rank FROM authority WHERE domain=?", (domain,))
+        return int(rows[0]["rank"]) if rows else None
+
+    def authority_age_days(self) -> int | None:
+        rows = self._rows("SELECT v FROM authority_meta WHERE k='updated_at'")
+        if not rows:
+            return None
+        return (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(rows[0]["v"])).days
+
+    def replace_authority(self, rows: list[tuple[str, int]]) -> None:
+        with self._lock, self.conn:
+            self.conn.execute("DELETE FROM authority")
+            self.conn.executemany("INSERT OR REPLACE INTO authority(domain,rank) VALUES(?,?)", rows)
+            self.conn.execute("INSERT INTO authority_meta(k,v) VALUES('updated_at',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (utcnow(),))
+
+    def set_authority(self, domain: str, rank: int) -> None:
+        self._exec("INSERT OR REPLACE INTO authority(domain,rank) VALUES(?,?)", (domain, rank))
+
+    # ----------------------------------------------------------------- mail
+    def mail_is_new(self, uid: str) -> bool:
+        return not self._rows("SELECT id FROM mail WHERE uid=?", (uid,))
+
+    def add_mail(self, m: dict[str, Any], category: str, summary: str, urgent: bool = False) -> int:
+        try:
+            cur = self._exec("INSERT INTO mail(uid,at,sender,sender_name,subject,received,category,summary,urgent) VALUES(?,?,?,?,?,?,?,?,?)", (m["uid"], utcnow(), m.get("from", ""), m.get("from_name", ""), m.get("subject", ""), m.get("date", ""), category, summary, int(urgent)))
+            return int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            return int(self._rows("SELECT id FROM mail WHERE uid=?", (m["uid"],))[0]["id"])
+
+    def list_mail(self, limit: int = 100) -> list[dict[str, Any]]:
+        return self._rows("SELECT * FROM mail ORDER BY urgent DESC, id DESC LIMIT ?", (limit,))
+
+    def add_mail_draft(self, mail_id: int, to_addr: str, subject: str, body: str) -> int:
+        cur = self._exec("INSERT INTO mail_drafts(at,mail_id,to_addr,subject,body,status) VALUES(?,?,?,?,?,'drafted')", (utcnow(), mail_id, to_addr, subject, body))
+        return int(cur.lastrowid)
+
+    def list_mail_drafts(self, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        if status:
+            return self._rows("SELECT * FROM mail_drafts WHERE status=? ORDER BY id DESC LIMIT ?", (status, limit))
+        return self._rows("SELECT * FROM mail_drafts ORDER BY id DESC LIMIT ?", (limit,))
+
+    def set_mail_draft_status(self, did: int, status: str) -> None:
+        self._exec("UPDATE mail_drafts SET status=? WHERE id=?", (status, did))
+
+    # ----------------------------------------------------------------- PR
+    def add_pr_opportunity(self, kind: str, source: str, contact: str = "", summary: str = "", detail: str = "", deadline: str = "", fit: float = 0.0, extra: dict[str, Any] | None = None) -> int | None:
+        try:
+            cur = self._exec("INSERT INTO pr_opportunities(at,kind,source,contact,summary,detail,deadline,fit,extra,status) VALUES(?,?,?,?,?,?,?,?,?,'found')", (utcnow(), kind, source, contact, summary, detail, deadline, fit, json.dumps(extra or {})))
+            return int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            return None
+
+    def get_pr_opportunity(self, pid: int) -> dict[str, Any] | None:
+        rows = self._rows("SELECT * FROM pr_opportunities WHERE id=?", (pid,))
+        if not rows:
+            return None
+        r = rows[0]
+        r["extra"] = json.loads(r["extra"]) if r.get("extra") else {}
+        return r
+
+    def list_pr_opportunities(self, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        rows = self._rows("SELECT * FROM pr_opportunities WHERE status=? ORDER BY fit DESC, id DESC LIMIT ?", (status, limit)) if status else self._rows("SELECT * FROM pr_opportunities ORDER BY id DESC LIMIT ?", (limit,))
+        for r in rows:
+            r["extra"] = json.loads(r["extra"]) if r.get("extra") else {}
+        return rows
+
+    def set_pr_pitch(self, pid: int, subject: str, body: str) -> None:
+        self._exec("UPDATE pr_opportunities SET pitch_subject=?, pitch_body=?, status='pitched' WHERE id=?", (subject, body, pid))
+
+    def set_pr_status(self, pid: int, status: str) -> None:
+        self._exec("UPDATE pr_opportunities SET status=? WHERE id=?", (status, pid))
+
+    # ----------------------------------------------------------------- network
+    def add_network_source(self, kind: str, name: str, url: str, platform: str, feed_url: str = "", domain_rank: int | None = None, relevance: float = 0.0, why: str = "") -> int | None:
+        try:
+            cur = self._exec("INSERT INTO network_sources(at,kind,name,url,platform,feed_url,domain_rank,relevance,why,status) VALUES(?,?,?,?,?,?,?,?,?,'suggested')", (utcnow(), kind, name, url, platform, feed_url, domain_rank, relevance, why))
+            return int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            return None
+
+    def get_network_source(self, sid: int) -> dict[str, Any] | None:
+        rows = self._rows("SELECT * FROM network_sources WHERE id=?", (sid,))
+        return rows[0] if rows else None
+
+    def list_network_sources(self, status: str | None = None) -> list[dict[str, Any]]:
+        if status:
+            return self._rows("SELECT * FROM network_sources WHERE status=? ORDER BY relevance DESC, id DESC", (status,))
+        return self._rows("SELECT * FROM network_sources ORDER BY status, relevance DESC, id DESC")
+
+    def set_network_source_status(self, sid: int, status: str) -> None:
+        self._exec("UPDATE network_sources SET status=? WHERE id=?", (status, sid))
+
+    def add_network_item(self, source_id: int, url: str, title: str, published: str, remote_id: str = "") -> int | None:
+        try:
+            cur = self._exec("INSERT INTO network_items(seen_at,source_id,url,title,published,remote_id,status) VALUES(?,?,?,?,?,?,'new')", (utcnow(), source_id, url, title, published, remote_id))
+            return int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            return None
+
+    def list_network_items(self, uncommented: bool = False, limit: int = 100) -> list[dict[str, Any]]:
+        if uncommented:
+            return self._rows("SELECT * FROM network_items WHERE status='new' ORDER BY id DESC LIMIT ?", (limit,))
+        return self._rows("SELECT * FROM network_items ORDER BY id DESC LIMIT ?", (limit,))
+
+    def mark_network_item(self, iid: int, status: str, content_id: int | None = None) -> None:
+        self._exec("UPDATE network_items SET status=?, content_id=COALESCE(?, content_id) WHERE id=?", (status, content_id, iid))
+
+    # ----------------------------------------------------------------- questions
+    def question_is_new(self, url: str) -> bool:
+        return not self._rows("SELECT id FROM questions WHERE url=?", (url,))
+
+    def add_question(self, platform: str, url: str, title: str, guide: str, fit: float, content_id: int | None) -> int | None:
+        try:
+            cur = self._exec("INSERT INTO questions(at,platform,url,title,guide,fit,content_id) VALUES(?,?,?,?,?,?,?)", (utcnow(), platform, url, title, guide, fit, content_id))
+            return int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            return None
+
+    def list_questions(self, limit: int = 100) -> list[dict[str, Any]]:
+        return self._rows("SELECT * FROM questions ORDER BY id DESC LIMIT ?", (limit,))
 
     # ----------------------------------------------------------------- site urls (IndexNow)
     def new_site_urls(self, urls: list[str]) -> list[str]:

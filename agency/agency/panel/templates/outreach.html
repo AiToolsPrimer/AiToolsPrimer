@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% block body %}
+<h1>Outreach</h1>
+<p class="muted">Network, community questions, inbox and PR. Nothing here goes out by itself: comments wait for your approval, answers are drafts, pitches and email replies are drafts you send.</p>
+<p>
+<form method="post" action="/run/network" class="inline"><button class="secondary">Run network watch</button></form>
+<form method="post" action="/run/questions" class="inline"><button class="secondary">Find questions</button></form>
+<form method="post" action="/run/mail" class="inline"><button class="secondary">Read the inbox</button></form>
+<form method="post" action="/run/pr" class="inline"><button class="secondary">PR scan</button></form>
+</p>
+<div class="grid">
+<div class="card"><h2>Network · sources</h2>
+{% for s in sources %}<div style="border-bottom:1px solid var(--line);padding:6px 0"><strong>{{ s.name[:70] }}</strong> <span class="pill">{{ s.platform }}</span>{% if s.domain_rank %} <span class="pill ok">rank {{ s.domain_rank }}</span>{% endif %} <span class="pill {{ 'ok' if s.status=='following' else 'warn' if s.status=='suggested' else '' }}">{{ s.status }}</span><br><a href="{{ s.url }}"><small>{{ s.url[:70] }}</small></a>{% if s.why %}<br><small class="muted">{{ s.why }}</small>{% endif %}<br>
+{% if s.status != 'following' %}<form method="post" action="/network/{{ s.id }}/following" class="inline"><button>Follow</button></form>{% endif %}
+{% if s.status != 'dismissed' %}<form method="post" action="/network/{{ s.id }}/dismissed" class="inline"><button class="secondary">Dismiss</button></form>{% endif %}</div>
+{% else %}<p class="muted">No sources yet. Run the network watch.</p>{% endfor %}
+<form method="post" action="/network/add" style="margin-top:8px"><input type="text" name="url" placeholder="paste a site or Bluesky profile URL to follow"><button class="secondary" style="margin-top:6px">Add</button></form></div>
+
+<div class="card"><h2>Network · new posts and comment drafts</h2>
+{% for it in items %}<div style="border-bottom:1px solid var(--line);padding:6px 0"><a href="{{ it.url }}">{{ it.title[:90] or it.url[:60] }}</a> <span class="pill {{ 'ok' if it.status=='commented' else 'warn' if it.status=='drafted' else '' }}">{{ it.status }}</span>{% if it.content_id %} · <a href="/content/{{ it.content_id }}">draft #{{ it.content_id }}</a>{% endif %}</div>{% else %}<p class="muted">Nothing new.</p>{% endfor %}</div>
+
+<div class="card"><h2>Community questions</h2>
+{% for q in questions %}<div style="border-bottom:1px solid var(--line);padding:6px 0"><span class="pill">{{ q.platform }}</span> <a href="{{ q.url }}">{{ q.title[:90] }}</a> · fit {{ '%.0f'|format((q.fit or 0)*100) }}%{% if q.content_id %} · <a href="/content/{{ q.content_id }}">{{ 'fact card' if q.platform in ['hackernews','stackexchange'] else 'draft' }}</a>{% endif %}</div>{% else %}<p class="muted">No matched questions yet.</p>{% endfor %}</div>
+
+<div class="card"><h2>Inbox {% if not mail_configured %}<span class="pill warn">not configured (MAIL_USER / MAIL_APP_PASSWORD)</span>{% endif %}</h2>
+{% for m in mail %}<div style="border-bottom:1px solid var(--line);padding:6px 0"><span class="pill {{ 'bad' if m.urgent else '' }}">{{ m.category }}</span> <strong>{{ m.subject[:70] }}</strong><br><small class="muted">{{ m.sender_name or m.sender }} · {{ m.received[:16] }} · {{ m.summary }}</small></div>{% else %}<p class="muted">Nothing read yet.</p>{% endfor %}
+<h2 style="margin-top:12px">Reply drafts</h2>
+{% for d in drafts %}<details style="border-bottom:1px solid var(--line);padding:6px 0"><summary>{{ d.subject[:70] }} → {{ d.to_addr }} <span class="pill {{ 'ok' if d.status=='in_gmail_drafts' else '' }}">{{ d.status }}</span></summary><div class="mono">{{ d.body }}</div><form method="post" action="/mail/draft/{{ d.id }}/dismissed" class="inline"><button class="secondary">Dismiss</button></form></details>{% else %}<p class="muted">No drafts.</p>{% endfor %}
+{% if drafts %}<form method="post" action="/run/mail_drafts"><button class="secondary">Save all drafts to Gmail Drafts</button></form>{% endif %}</div>
+
+<div class="card" style="grid-column: span 2"><h2>PR · opportunities and pitches (authoritative sites only)</h2>
+{% for o in pr %}<div style="border-bottom:1px solid var(--line);padding:6px 0"><span class="pill">{{ o.kind }}</span> <strong>{{ o.summary[:100] }}</strong> <span class="pill {{ 'ok' if o.status=='sent' else 'warn' if o.status=='pitched' else '' }}">{{ o.status }}</span> · fit {{ '%.0f'|format((o.fit or 0)*100) }}%{% if o.deadline %} · deadline {{ o.deadline }}{% endif %}<br><small class="muted">{{ o.source[:90] }}{% if o.contact %} · {{ o.contact }}{% endif %}</small>
+{% if o.detail %}<br><small>{{ o.detail[:300] }}</small>{% endif %}
+{% if o.pitch_body %}<details><summary>pitch: {{ o.pitch_subject }}</summary><div class="mono">{{ o.pitch_body }}</div></details>{% endif %}
+<form method="post" action="/pr/{{ o.id }}/pitch" class="inline"><button class="secondary">{{ 'Rewrite pitch' if o.pitch_body else 'Write pitch' }}</button></form>
+<form method="post" action="/pr/{{ o.id }}/sent" class="inline"><button class="secondary">I sent it</button></form>
+<form method="post" action="/pr/{{ o.id }}/dismissed" class="inline"><button class="secondary">Dismiss</button></form></div>
+{% else %}<p class="muted">No opportunities yet. Journalist requests arrive through the inbox digests (Source of Sources, Featured, Qwoted...); mentions and broken links come from the weekly PR scan.</p>{% endfor %}</div>
+</div>
+{% endblock %}

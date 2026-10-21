@@ -30,6 +30,7 @@ class ActionKind(str, Enum):
     PREPARE_MANUAL = "prepare_manual"     # intent link / copy-paste package; nothing leaves the machine
     READ_MAIL = "read_mail"
     NETWORK_WATCH = "network_watch"
+    EXTERNAL_COMMENT = "external_comment"   # a comment under someone else's post, through the API, after your approval
     # Things that are always refused, kept here so the UI can explain why
     CREATE_ACCOUNT = "create_account"
     FRIEND_REQUEST = "friend_request"
@@ -65,11 +66,12 @@ TOGGLE_FOR_KIND = {
     ActionKind.PREPARE_MANUAL: "write_posts",
     ActionKind.READ_MAIL: "read_mail",
     ActionKind.NETWORK_WATCH: "network_watch",
+    ActionKind.EXTERNAL_COMMENT: "network_watch",
 }
 
-BROWSER_KINDS = {ActionKind.BROWSER_PUBLISH, ActionKind.BROWSER_COMMENT}
+BROWSER_KINDS = {ActionKind.BROWSER_PUBLISH, ActionKind.BROWSER_COMMENT, ActionKind.EXTERNAL_COMMENT}  # all need a human click
 
-OUTBOUND_KINDS = {ActionKind.PUBLISH_POST, ActionKind.PUBLISH_ARTICLE, ActionKind.PUBLISH_VIDEO, ActionKind.REPLY_OWN, ActionKind.BROWSER_PUBLISH, ActionKind.BROWSER_COMMENT}
+OUTBOUND_KINDS = {ActionKind.PUBLISH_POST, ActionKind.PUBLISH_ARTICLE, ActionKind.PUBLISH_VIDEO, ActionKind.REPLY_OWN, ActionKind.BROWSER_PUBLISH, ActionKind.BROWSER_COMMENT, ActionKind.EXTERNAL_COMMENT}
 
 
 @dataclass

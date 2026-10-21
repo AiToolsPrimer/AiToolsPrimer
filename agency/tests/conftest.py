@@ -67,6 +67,26 @@ class FakeLLM:
             return {"verdicts": verdicts}
         if "choose the strongest draft" in t:
             return {"chosen": 0, "why": "first"}
+        if "classify this email" in t:
+            if "sponsored" in t:
+                return {"category": "spam", "summary": "sponsored placement offer", "urgent": False, "reply": ""}
+            return {"category": "reader", "summary": "reader asks about PDF editors", "urgent": False, "reply": "Thanks for writing. The guide has the full table of what we tested."}
+        if "digest of journalist requests" in t:
+            return {"requests": [{"outlet": "Reuters", "topic": "free PDF editors", "query": "Looking for experts who tested free PDF editors", "email": "reporter@reuters.example.com", "deadline": "Oct 25", "fit": 0.9, "guide_hint": "https://aitoolsprimer.com/pdf"},
+                                 {"outlet": "Fake", "topic": "x", "query": "guessing address", "email": "nobody@nowhere.example.com", "deadline": "", "fit": 0.2, "guide_hint": ""}]}
+        if "write a pitch email" in t:
+            return {"subject": "Tested five free PDF editors on a real contract", "body": "Hello. We tested five free PDF editors on a real contract. Two added a watermark after the trial. Happy to share the table. Best, the editor", "to": "reporter@reuters.example.com"}
+        if "links to these dead urls" in t:
+            return {"matches": [{"dead": "https://dead.example.com/old-pdf-guide", "guide_url": "https://aitoolsprimer.com/pdf", "why": "same subject"}]}
+        if "which of these sites and accounts are genuinely relevant" in t:
+            return {"keep": [{"url": "https://niche-blog.example.com/", "relevance": 0.8, "why": "writes about AI tools"}, {"url": "https://bsky.app/profile/toolsnerd.bsky.social", "relevance": 0.9, "why": "reviews tools"}]}
+        if "a source we follow published" in t:
+            return {"text": "We tested five free PDF editors on a real contract. Which one kept the metadata for you?", "skip": False, "guide_url": "https://aitoolsprimer.com/pdf"}
+        if "questions found online" in t:
+            return {"matches": [{"url": "https://www.reddit.com/r/pdf/comments/1/free_pdf_editor", "guide_url": "https://aitoolsprimer.com/pdf", "fit": 0.9, "answer_points": ["two added a watermark"]},
+                                {"url": "https://news.ycombinator.com/item?id=41", "guide_url": "https://aitoolsprimer.com/pdf", "fit": 0.8, "answer_points": ["we tested five free PDF editors"]}]}
+        if "draft an answer to this" in t:
+            return {"text": "We tested five free PDF editors on a real contract. Two added a watermark after the trial. I run the site that published the test."}
         if "you are reviewing a" in t:
             return {"approved": True, "notes": ""}
         if "write one " in t and " post." in t:
@@ -100,14 +120,54 @@ GUIDE_HTML = """<html><head><title>Five free PDF editors tested</title></head><b
 <p>Checked 15 October 2026.</p><footer>footer</footer></body></html>"""
 
 
+DDG_HTML = """<html><body>
+<a class="result__a" href="https://html.duckduckgo.com/l/?uddg=https%3A%2F%2Fbigtech.example.com%2Freview">Big Tech Review: AI Tools Primer tested</a>
+<a class="result__a" href="https://lemmy.world/about">Lemmy</a>
+<a class="result__a" href="https://www.quora.com/Which-free-PDF-editor-is-safe">Which free PDF editor is safe? - Quora</a>
+<a class="result__a" href="https://niche-blog.example.com/">Niche blog about AI tools</a>
+</body></html>"""
+BIGTECH_HTML = """<html><body><h1>Review</h1><p>We like AI Tools Primer for its plain-English tests.</p>
+<a href="https://dead.example.com/old-pdf-guide">old guide</a><a href="https://fine.example.com/ok">ok</a></body></html>"""
+NICHE_HTML = """<html><head><link rel="alternate" type="application/rss+xml" href="/feed.xml"></head><body>blog</body></html>"""
+NICHE_FEED = """<?xml version="1.0"?><rss><channel><item><title>New post about PDF tools</title><link>https://niche-blog.example.com/pdf-tools</link><pubDate>Mon, 20 Oct 2026 10:00:00 +0000</pubDate></item></channel></rss>"""
+
+
 def mock_transport():
+    import json
+
     import httpx
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "aitoolsprimer.com":
-            if request.url.path == "/sitemap.xml":
+        host, path = request.url.host, request.url.path
+        if host == "aitoolsprimer.com":
+            if path == "/sitemap.xml":
                 return httpx.Response(200, text="<urlset><url><loc>https://aitoolsprimer.com/pdf</loc></url></urlset>")
             return httpx.Response(200, text=GUIDE_HTML, headers={"content-type": "text/html"})
+        if host == "html.duckduckgo.com":
+            return httpx.Response(200, text=DDG_HTML, headers={"content-type": "text/html"})
+        if host == "bigtech.example.com":
+            return httpx.Response(200, text=BIGTECH_HTML, headers={"content-type": "text/html"})
+        if host == "dead.example.com":
+            return httpx.Response(404, text="gone")
+        if host == "fine.example.com":
+            return httpx.Response(200, text="ok")
+        if host == "niche-blog.example.com":
+            if path == "/feed.xml":
+                return httpx.Response(200, text=NICHE_FEED)
+            return httpx.Response(200, text=NICHE_HTML, headers={"content-type": "text/html"})
+        if host == "public.api.bsky.app":
+            if "searchActors" in path:
+                return httpx.Response(200, json={"actors": [{"handle": "toolsnerd.bsky.social", "displayName": "Tools Nerd", "description": "AI tools reviews"}]})
+            if "getAuthorFeed" in path:
+                return httpx.Response(200, json={"feed": [{"post": {"uri": "at://did:plc:1/app.bsky.feed.post/abc", "cid": "cid1", "indexedAt": "2026-10-20T10:00:00Z", "record": {"text": "Which PDF editor keeps metadata?"}}}]})
+        if host == "www.reddit.com" and path == "/search.json":
+            return httpx.Response(200, json={"data": {"children": [{"data": {"permalink": "/r/pdf/comments/1/free_pdf_editor", "title": "Best free PDF editor for a contract?", "selftext": "Need one that does not watermark", "subreddit": "pdf"}}]}})
+        if host == "hn.algolia.com":
+            return httpx.Response(200, json={"hits": [{"objectID": "41", "title": "Ask HN: free PDF editors without watermarks?", "story_text": ""}]})
+        if host == "api.stackexchange.com":
+            return httpx.Response(200, json={"items": [{"link": "https://superuser.com/questions/9/pdf-editor", "title": "Free PDF editor that keeps form fields?"}]})
+        if host == "api.indexnow.org":
+            return httpx.Response(200, text="")
         return httpx.Response(404, text="not found")
 
     return httpx.MockTransport(handler)

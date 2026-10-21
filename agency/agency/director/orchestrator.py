@@ -226,6 +226,8 @@ class Director(Agent):
             self.store.update_content(cid, body=edited_body)
             row["body"] = edited_body
         verdict = self.safety.check(row.get("body") or row.get("title") or "", facts_supplied=bool(row["meta"].get("facts")))
+        if row["kind"] == "comment":
+            return self._approve_external_comment(row, verdict.ok)
         if row["kind"] == "reply":
             action = Action(ActionKind.REPLY_OWN, row["platform"], {"text": row["body"], "reply_to": row["meta"].get("reply_to"), "engagement_id": row["meta"].get("engagement_id"), "content_id": cid}, safety_passed=verdict.ok)
             from agency.platforms.base import Comment
@@ -234,6 +236,33 @@ class Director(Agent):
                 self.store.update_content(cid, status="published", published_at=dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"))
             return decision
         return self._force_through(self._action_for(row, safety_passed=verdict.ok), {})
+
+    def _approve_external_comment(self, row: dict[str, Any], safety_ok: bool) -> Decision:
+        """A comment under someone else's post: your approval is the click. API where the platform has one
+        (Bluesky, Mastodon reply), otherwise the browser operator fills it and you click Reply."""
+        cid, platform, meta = row["id"], row["platform"], row["meta"]
+        p = self.platforms.get(platform)
+        action = Action(ActionKind.EXTERNAL_COMMENT, platform, {"content_id": cid, "human_click": True}, safety_passed=safety_ok)
+        decision = self.policy.evaluate(action)
+        self.store.log_action(action.kind.value, platform, decision.verdict.value, decision.reason, cid, action.payload)
+        if not decision.allowed:
+            return decision
+        from agency.platforms.base import Comment
+        if p is not None and self.mode_for(platform) == "api" and meta.get("target_remote_id"):
+            res = p.reply(Comment(meta["target_remote_id"], "author", "", ""), row["body"])
+            if res.ok:
+                self.store.update_content(cid, status="published", published_at=dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), remote_id=res.remote_id, remote_url=res.url, meta={**meta, "dry_run": res.dry_run})
+                if meta.get("network_item"):
+                    self.store.mark_network_item(meta["network_item"], "commented")
+                return Decision(Verdict.ALLOW, "comment posted")
+            self.store.update_content(cid, status="failed", meta={**meta, "error": res.error})
+            return Decision(Verdict.DENY, res.error)
+        if self.operator is not None:
+            task = self.operator.prepare(platform if platform in self.operator.recipes else "x", "comment", {"content_id": cid, "text": row["body"], "post_url": meta.get("target_url", "")})
+            self.store.update_content(cid, status="ready_to_click" if task.status in ("ready", "needs_your_click") else "failed", meta={**meta, "browser_task": task.id, "browser_status": task.status, "screenshot": task.screenshot})
+            return Decision(Verdict.ALLOW, f"browser task {task.id}: {task.status}")
+        self.store.update_content(cid, status="manual", meta={**meta, "manual_mode": "manual"})
+        return Decision(Verdict.ALLOW, "prepared for manual posting")
 
     def _force_through(self, action: Action, context: dict[str, Any]) -> Decision:
         """A human click overrides 'approval_required' and the publishing switch, nothing else."""
@@ -487,6 +516,50 @@ class Director(Agent):
             return ""
         self.analyst.collect()
         return self.analyst.lessons()
+
+    def network_cycle(self) -> dict[str, Any]:
+        agent = getattr(self, "network", None)
+        if agent is None or not self.toggles.get("master_enabled"):
+            return {}
+        self._phase("network")
+        found = agent.discover() if not self.store.list_network_sources() else []
+        watched = agent.watch()
+        drafts = agent.draft_comments() if self.toggles.get("network_watch") else []
+        return {"discovered": len(found), **watched, "comment_drafts": len(drafts)}
+
+    def mail_cycle(self) -> dict[str, Any]:
+        agent = getattr(self, "mail", None)
+        if agent is None or not self.toggles.get("master_enabled"):
+            return {}
+        self._phase("mail")
+        out = agent.run()
+        if self.toggles.get("read_mail"):
+            out["saved_to_gmail_drafts"] = agent.save_drafts_to_gmail()
+        return out
+
+    def pr_cycle(self) -> dict[str, Any]:
+        agent = getattr(self, "pr", None)
+        if agent is None or not self.toggles.get("master_enabled"):
+            return {}
+        self._phase("pr")
+        agent.authority.refresh()
+        mentions = agent.unlinked_mentions()
+        pages = [s["url"] for s in self.store.list_network_sources(status="following") if s["kind"] == "site"][:10]
+        guides = [{"url": p["url"], "title": p["title"]} for p in self.strategist.site_inventory()]
+        broken = agent.broken_links(pages, guides) if pages else []
+        pitched = 0
+        for opp in self.store.list_pr_opportunities(status="found")[:10]:
+            if float(opp.get("fit") or 0) >= 0.6 and agent.write_pitch(opp["id"]):
+                pitched += 1
+        return {"unlinked_mentions": len(mentions), "broken_links": len(broken), "pitches": pitched}
+
+    def questions_cycle(self) -> list[dict[str, Any]]:
+        agent = getattr(self, "questions", None)
+        if agent is None or not self.toggles.get("master_enabled"):
+            return []
+        self._phase("community questions")
+        guides = [{"url": p["url"], "title": p["title"]} for p in self.strategist.site_inventory()]
+        return agent.run(guides)
 
     def scout_cycle(self) -> list[dict[str, Any]]:
         if not self.scout or not self.toggles.get("master_enabled"):

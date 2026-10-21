@@ -6,7 +6,14 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import os
+
 from agency.agents.analyst import Analyst
+from agency.agents.authority import Authority
+from agency.agents.mail import MailAgent, Mailbox
+from agency.agents.network import NetworkAgent
+from agency.agents.pr import PRAgent
+from agency.agents.questions import QuestionsAgent
 from agency.agents.community import CommunityManager
 from agency.agents.creative import ImageAgent, VideoAgent
 from agency.agents.factcheck import FactChecker
@@ -124,8 +131,17 @@ class Agency:
         self.community = CommunityManager(self.brain, self.store, brand, self.writer, self.platforms, self.director.submit, safety=self.safety, factcheck=self.factcheck)
         self.scout = Scout(self.brain, self.store, brand, self.http, self.director.submit, image_agent=self.image_agent)
         self.analyst = Analyst(self.brain, self.store, brand, self.platforms, self.director.submit)
+        self.authority = Authority(self.store, self.http, dry_run=self.dry_run)
+        mailbox = None
+        if os.environ.get("MAIL_USER") and os.environ.get("MAIL_APP_PASSWORD"):
+            mailbox = Mailbox(os.environ.get("MAIL_IMAP_HOST", "imap.gmail.com"), os.environ["MAIL_USER"], os.environ["MAIL_APP_PASSWORD"])
+        self.mail = MailAgent(self.brain, self.store, brand, mailbox, self.director.submit, from_addr=os.environ.get("MAIL_USER", ""))
+        self.pr = PRAgent(self.brain, self.store, brand, self.http, self.authority, factcheck=self.factcheck)
+        self.network = NetworkAgent(self.brain, self.store, brand, self.http, self.authority, self.director.submit, writer=self.writer, factcheck=self.factcheck)
+        self.questions = QuestionsAgent(self.brain, self.store, brand, self.http, factcheck=self.factcheck)
         self.director.community, self.director.scout, self.director.analyst = self.community, self.scout, self.analyst
-        for agent in (self.director, self.writer, self.second_writer, self.strategist, self.safety, self.factcheck, self.image_agent, self.video_agent, self.community, self.scout, self.analyst, self.news_watch):
+        self.director.mail, self.director.pr, self.director.network, self.director.questions = self.mail, self.pr, self.network, self.questions
+        for agent in (self.director, self.writer, self.second_writer, self.strategist, self.safety, self.factcheck, self.image_agent, self.video_agent, self.community, self.scout, self.analyst, self.news_watch, self.mail, self.pr, self.network, self.questions):
             if agent is not None:
                 agent.office = self.office
         if self.second_writer is not None:
@@ -198,5 +214,6 @@ class Agency:
             "events": self.events[-50:],
             "office": self.office.board(),
             "corrections": self.store.count_corrections(),
+            "outreach": {"mail_drafts": len(self.store.list_mail_drafts(status="drafted")), "pr": len(self.store.list_pr_opportunities(status="found")) + len(self.store.list_pr_opportunities(status="pitched")), "network_suggested": len(self.store.list_network_sources(status="suggested"))},
             "knowledge_updates": len(self.store.list_knowledge_updates()),
         }

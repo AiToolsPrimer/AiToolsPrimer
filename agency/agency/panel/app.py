@@ -17,7 +17,7 @@ from agency.settings import LOCKED_TOGGLES
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-NAV = ["office", "queue", "operator", "content", "assets", "platforms", "knowledge", "learning", "models", "scout", "logs"]
+NAV = ["office", "queue", "operator", "outreach", "content", "assets", "platforms", "knowledge", "learning", "models", "scout", "logs"]
 
 
 def create_app(agency: Agency) -> FastAPI:
@@ -78,6 +78,42 @@ def create_app(agency: Agency) -> FastAPI:
                     agency.store.update_content(cid, status="published", published_at=dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), remote_id=f"browser-{tid}")
                     agency.store.log_action("browser_publish", t.platform, "allow", "published by hand after the operator filled it", cid, {"task": tid})
         return RedirectResponse("/operator", status_code=303)
+
+    @app.get("/outreach", response_class=HTMLResponse)
+    def outreach(request: Request):
+        return render(request, "outreach.html", sources=agency.store.list_network_sources(), items=agency.store.list_network_items(limit=40), questions=agency.store.list_questions(40),
+                      mail=agency.store.list_mail(40), drafts=agency.store.list_mail_drafts(limit=40), pr=agency.store.list_pr_opportunities(limit=60), mail_configured=agency.mail.mailbox is not None)
+
+    @app.post("/network/add")
+    def network_add(url: str = Form(...)):
+        url = url.strip()
+        if url:
+            platform = "bluesky" if "bsky.app/profile/" in url else "web"
+            feed = agency.network.find_feed(url) if platform == "web" else ""
+            sid = agency.store.add_network_source("account" if platform == "bluesky" else "site", url, url, platform, feed_url=feed, relevance=1.0, why="added by you")
+            if sid:
+                agency.store.set_network_source_status(sid, "following")
+        return RedirectResponse("/outreach", status_code=303)
+
+    @app.post("/network/{sid}/{status}")
+    def network_status(sid: int, status: str):
+        if status in ("following", "dismissed", "suggested"):
+            agency.store.set_network_source_status(sid, status)
+        return RedirectResponse("/outreach", status_code=303)
+
+    @app.post("/mail/draft/{did}/{status}")
+    def mail_draft_status(did: int, status: str):
+        if status in ("dismissed", "drafted"):
+            agency.store.set_mail_draft_status(did, status)
+        return RedirectResponse("/outreach", status_code=303)
+
+    @app.post("/pr/{pid}/{what}")
+    def pr_action(pid: int, what: str):
+        if what == "pitch":
+            background(f"pitch-{pid}", lambda: agency.pr.write_pitch(pid))
+        elif what in ("sent", "dismissed", "found"):
+            agency.store.set_pr_status(pid, what)
+        return RedirectResponse("/outreach", status_code=303)
 
     @app.get("/content", response_class=HTMLResponse)
     def content(request: Request, status: str | None = None):
@@ -204,6 +240,11 @@ def create_app(agency: Agency) -> FastAPI:
             "news_watch": agency.news_watch.run,
             "benchmark": agency.benchmark_brains,
             "logins": lambda: agency.operator.open_logins(),
+            "network": agency.director.network_cycle,
+            "questions": agency.director.questions_cycle,
+            "mail": agency.director.mail_cycle,
+            "mail_drafts": agency.mail.save_drafts_to_gmail,
+            "pr": agency.director.pr_cycle,
             "video": lambda: agency.director.produce_video(topic or "a guide from our site", angle or "practical, verified", target_seconds=seconds or None),
             "post": lambda: agency.director.produce_post(platform, topic or "a guide from our site", angle or "practical, verified", with_image=True),
         }
@@ -211,7 +252,8 @@ def create_app(agency: Agency) -> FastAPI:
             raise HTTPException(404)
         started = background(job, fns[job])
         agency.note(f"job {job}: {'started' if started else 'already running'}")
-        return RedirectResponse("/" if job not in ("benchmark",) else "/models", status_code=303)
+        target = "/models" if job == "benchmark" else "/outreach" if job in ("network", "questions", "mail", "mail_drafts", "pr") else "/"
+        return RedirectResponse(target, status_code=303)
 
     @app.post("/scout/{sid}/{what}")
     def scout_action(sid: int, what: str):
@@ -281,5 +323,10 @@ TOGGLE_HELP = {
     "collect_metrics": "Read our own posts' numbers through the official APIs.",
     "block_payments": "Hard guarantee: no request can reach a payment, ads or billing endpoint.",
     "block_account_creation": "Hard guarantee: accounts are created by a person, never by the agency.",
-    "block_mass_actions": "Hard guarantee: no automated follows, friend requests or comments on others' content.",
+    "browser_operator": "Fill posts and comments in the agent's Chrome; you click Publish.",
+    "make_podcast": "Read every article into the podcast feed with the local voice.",
+    "push_indexnow": "Tell Bing and partners about new pages of the site.",
+    "read_mail": "Read the inbox (IMAP, read-only) and draft replies; nothing is sent.",
+    "network_watch": "Follow affine sites and accounts, draft comments that wait for your approval.",
+    "block_mass_actions": "Hard guarantee: no automated follows or friend requests, no comments on others' content without your click, never in bulk.",
 }

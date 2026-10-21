@@ -43,4 +43,8 @@ def build(agency: Agency) -> BackgroundScheduler:
     sched.add_job(agency.director.scout_cycle, CronTrigger(day_of_week=day, hour=h, minute=m), id="scout", max_instances=1, coalesce=True)
     sched.add_job(lambda: release_due(agency), IntervalTrigger(minutes=5), id="release", max_instances=1, coalesce=True)
     sched.add_job(agency.news_watch.run, CronTrigger(day_of_week="sun", hour=6, minute=0), id="news_watch", max_instances=1, coalesce=True)
+    sched.add_job(agency.director.network_cycle, CronTrigger(hour=9, minute=10), id="network", max_instances=1, coalesce=True)
+    sched.add_job(agency.director.mail_cycle, IntervalTrigger(minutes=60), id="mail", max_instances=1, coalesce=True)
+    sched.add_job(agency.director.pr_cycle, CronTrigger(day_of_week="tue", hour=10, minute=0), id="pr", max_instances=1, coalesce=True)
+    sched.add_job(agency.director.questions_cycle, CronTrigger(hour=11, minute=20), id="questions", max_instances=1, coalesce=True)
     return sched
