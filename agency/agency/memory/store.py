@@ -221,7 +221,8 @@ class Store:
     def count_recent_actions(self, platform: str, kind: str, window: dt.timedelta, verdict: str = "allow") -> int:
         since = (dt.datetime.now(dt.timezone.utc) - window).isoformat()
         if platform == "*browser*":
-            rows = self._rows("SELECT COUNT(*) AS n FROM actions WHERE kind IN ('browser_publish','browser_comment') AND verdict=? AND at>=?", (verdict, since))
+            # only real clicks count (the approval that merely fills the page carries no human_click flag)
+            rows = self._rows("SELECT COUNT(*) AS n FROM actions WHERE kind IN ('browser_publish','browser_comment') AND verdict=? AND at>=? AND payload LIKE '%\"human_click\": true%'", (verdict, since))
         elif platform == "*":
             rows = self._rows("SELECT COUNT(*) AS n FROM actions WHERE kind=? AND verdict=? AND at>=?", (kind, verdict, since))
         else:
