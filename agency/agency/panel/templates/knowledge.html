@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block body %}
+<h1>Knowledge</h1>
+<div class="grid">
+<div class="card" style="grid-column: span 2"><h2>Platform cards</h2>
+<table><tr><th>platform</th><th>limits</th><th>last checked</th><th></th></tr>
+{% for c in cards %}<tr><td><a href="/knowledge?card={{ c.key }}">{{ c.label }}</a></td><td><small>{% for k,v in c.limits.items() %}{{ k }}={{ v }} {% endfor %}</small></td><td><span class="pill {{ 'warn' if c.stale else 'ok' }}">{{ c.last_checked }}</span></td><td><small class="muted">{{ c.checked[:10] }}</small></td></tr>{% endfor %}
+</table>
+<p>Playbooks: {% for p in playbooks %}<a class="pill" href="/knowledge?card={{ p }}">{{ p }}</a> {% endfor %}</p>
+<form method="post" action="/run/news_watch"><button class="secondary">Run the platform news watch now</button></form></div>
+<div class="card"><h2>Proposed updates ({{ updates|length }})</h2>
+{% if not updates %}<p class="muted">Nothing proposed. The watch runs every Sunday.</p>{% endif %}
+{% for u in updates %}<div style="border-bottom:1px solid var(--line);padding:6px 0"><strong>{{ u.platform }}</strong> <span class="pill">{{ '%.0f'|format((u.confidence or 0)*100) }}%</span><br>{{ u.summary }}{% if u.field and u.field != 'none' %}<br><small class="muted">{{ u.field }} → {{ u.new_value }}</small>{% endif %}{% if u.source %}<br><a href="{{ u.source }}"><small>source</small></a>{% endif %}<br>
+<form method="post" action="/knowledge/update/{{ u.id }}/apply" class="inline"><button>Apply</button></form> <form method="post" action="/knowledge/update/{{ u.id }}/dismiss" class="inline"><button class="secondary">Dismiss</button></form></div>{% endfor %}</div>
+</div>
+{% if selected %}<div class="card" style="margin-top:14px"><h2>{{ selected.label }}</h2><div class="mono">{{ selected.body }}</div><p class="muted">File: {{ selected.path.name }} · edit it in any text editor; the agency reloads cards on every run.</p></div>{% endif %}
+{% endblock %}

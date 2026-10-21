@@ -1,0 +1,28 @@
+platform: x
+label: X
+kinds: [post, image]
+login_url: https://x.com/login
+compose_url: https://x.com/compose/post
+steps:
+  - action: wait
+    selector: '[data-testid="tweetTextarea_0"]'
+  - action: fill_editor
+    selector: '[data-testid="tweetTextarea_0"]'
+    value: text
+  - action: upload
+    selector: 'input[data-testid="fileInput"]'
+    value: media
+    optional: true
+publish:
+  selector: '[data-testid="tweetButton"]'
+result_url_pattern: 'https://x\.com/[^/]+/status/\d+'
+comment:
+  open: post_url
+  steps:
+    - action: wait
+      selector: '[data-testid="tweetTextarea_0"]'
+    - action: fill_editor
+      selector: '[data-testid="tweetTextarea_0"]'
+      value: text
+  publish:
+    selector: '[data-testid="tweetButtonInline"]'

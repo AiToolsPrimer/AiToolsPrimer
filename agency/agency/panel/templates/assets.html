@@ -1,0 +1,4 @@
+{% extends "base.html" %}{% block body %}
+<h1>Assets</h1>
+<div class="grid">{% for a in items %}<div class="card">{% if a.kind=='image' %}<img class="thumb" src="/asset/{{ a.id }}">{% else %}<a class="btn" href="/asset/{{ a.id }}">open {{ a.kind }}</a>{% endif %}<p><strong>#{{ a.id }} {{ a.kind }}</strong> <span class="muted">{{ a.model }} · {{ a.created_at }}</span></p><p class="muted">{{ (a.prompt or '')[:140] }}</p>{% if a.meta.seconds %}<p>{{ a.meta.seconds }} s · {{ a.meta.scenes }} scenes</p>{% endif %}</div>{% endfor %}</div>
+{% endblock %}

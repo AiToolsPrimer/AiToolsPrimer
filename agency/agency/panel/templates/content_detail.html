@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block body %}
+<h1>#{{ c.id }} · {{ c.kind }} · {{ c.platform }} <span class="pill {{ 'ok' if c.status=='published' else 'bad' if c.status in ['rejected','failed'] else 'warn' if c.status=='queued' else '' }}">{{ c.status }}</span></h1>
+<p class="muted">{{ c.created_at }} · topic: {{ c.topic }} · publishing mode: {{ mode }}{% if c.scheduled_for %} · scheduled {{ c.scheduled_for }} UTC{% endif %}</p>
+<div class="card"><h2>Pipeline</h2>
+<span class="stage ok">brief</span>
+{% if c.meta.team %}<span class="stage ok" title="{{ c.meta.team.why }}">team: {{ c.meta.team.drafts }} drafts, chose {{ c.meta.team.chosen }}</span>{% else %}<span class="stage ok">draft</span>{% endif %}
+{% if c.meta.factcheck %}<span class="stage {{ 'warn' if c.meta.factcheck.removed else 'ok' }}">fact check: {{ c.meta.factcheck.kept if c.meta.factcheck.kept is defined else c.meta.factcheck.scenes_kept }} kept, {{ c.meta.factcheck.removed|length }} removed</span>{% endif %}
+{% if c.meta.constraint_notes %}<span class="stage warn">limits: {{ c.meta.constraint_notes|join('; ') }}</span>{% else %}<span class="stage ok">platform limits</span>{% endif %}
+{% if c.meta.reject_reason %}<span class="stage bad">{{ c.meta.reject_reason }}</span>{% else %}<span class="stage ok">safety</span>{% endif %}
+{% for a in actions %}<span class="stage {{ 'ok' if a.verdict=='allow' else 'bad' if a.verdict=='deny' else 'warn' }}" title="{{ a.at }}">{{ a.kind }}: {{ a.verdict }} ({{ a.reason }})</span>{% endfor %}
+{% if c.remote_url %}<span class="stage ok"><a href="{{ c.remote_url }}">published →</a></span>{% endif %}
+{% if c.meta.error %}<span class="stage bad">{{ c.meta.error }}</span>{% endif %}
+</div>
+<div class="grid" style="margin-top:14px">
+<div class="card"><h2>Text</h2>{% if c.title %}<p><strong>{{ c.title }}</strong></p>{% endif %}
+{% if c.status == 'queued' %}<form method="post" action="/approve/{{ c.id }}"><textarea name="body" rows="{{ 14 if c.kind=='article' else 6 }}">{{ c.body }}</textarea><br><button>Approve & publish</button> <a class="btn secondary" href="/queue">back</a></form><form method="post" action="/reject/{{ c.id }}" class="inline"><button class="danger">Reject</button></form>
+{% else %}<div class="mono">{{ c.body }}</div>{% endif %}
+{% if c.meta.first_comment %}<p class="muted">First comment: {{ c.meta.first_comment }}</p>{% endif %}
+{% if c.meta.intent_url %}<p><a class="btn" href="{{ c.meta.intent_url }}" target="_blank">Open {{ c.platform }} pre-filled (one tap)</a></p>{% endif %}
+{% if c.status == 'manual' and not c.meta.intent_url %}<p class="muted">Manual mode: copy the text above{% if c.meta.feed %}; podcast feed at {{ c.meta.feed }}{% endif %}.</p>{% endif %}
+{% if c.status == 'ready_to_click' %}<p><a class="btn" href="/operator">Open the operator to publish (task {{ c.meta.browser_task }})</a></p>{% endif %}
+{% if c.meta.tags %}<p class="muted">tags: {{ c.meta.tags|join(', ') }}</p>{% endif %}</div>
+<div class="card"><h2>Fact check</h2>
+{% if c.meta.factcheck and c.meta.factcheck.removed %}<p>Removed because not supported by the guide:</p><ul>{% for r in c.meta.factcheck.removed %}<li><small>{{ r.sentence }}</small><br><span class="muted">{{ r.reason }}</span></li>{% endfor %}</ul>{% elif c.meta.factcheck %}<p class="muted">Every sentence passed.</p>{% else %}<p class="muted">Not applicable.</p>{% endif %}
+{% if c.meta.facts %}<details><summary>Facts used from the guide</summary><div class="mono">{{ c.meta.facts }}</div></details>{% endif %}
+<h2 style="margin-top:12px">Assets</h2>{% for a in assets %}{% if a.kind=='image' %}<img class="thumb" src="/asset/{{ a.id }}"> {% else %}<a class="pill" href="/asset/{{ a.id }}">{{ a.kind }} #{{ a.id }}</a> {% endif %}{% else %}<span class="muted">none</span>{% endfor %}</div>
+</div>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block body %}
+<h1>Browser operator</h1>
+<p class="muted">For platforms without a free API the operator fills the post in the agent's own Chrome and stops. Nothing is published until you press <b>Publish</b> here. Log in once with <code>agency chrome-login</code>.</p>
+<form method="post" action="/run/logins" class="inline"><button class="secondary">Open login pages in the agent's Chrome</button></form>
+<p class="muted">Daily browser actions: {{ clicks_today }} / {{ status.limits_browser }}</p>
+{% if not tasks %}<p class="muted">No browser tasks yet. Approve a post on a browser-mode platform (X, Medium, Substack, LinkedIn Articles, Blogger, Dailymotion) and it will appear here with a screenshot.</p>{% endif %}
+{% for t in tasks %}
+<div class="card" style="margin-bottom:12px">
+<p><strong>Task {{ t.id }} · {{ t.kind }} on {{ t.platform }}</strong> <span class="pill {{ 'ok' if t.status=='published' else 'bad' if t.status in ['failed','cancelled'] else 'warn' }}">{{ t.status }}</span> <span class="muted">{{ t.created_at }}</span>{% if t.payload.content_id %} · <a href="/content/{{ t.payload.content_id }}">content #{{ t.payload.content_id }}</a>{% endif %}</p>
+{% if t.screenshot %}<img src="/shot/{{ t.id }}" style="max-width:100%;border-radius:8px;border:1px solid var(--line)">{% endif %}
+{% if t.error %}<p class="muted">{{ t.error }}</p>{% endif %}
+<details><summary>log</summary><div class="mono">{{ t.log|join('\n') }}</div></details>
+{% if t.status in ['ready', 'needs_your_click'] %}
+<form method="post" action="/operator/{{ t.id }}/publish" class="inline"><button>Publish in the browser</button></form>
+<form method="post" action="/operator/{{ t.id }}/cancel" class="inline"><button class="secondary">Cancel</button></form>
+{% if t.status == 'needs_your_click' %}<p class="muted">The page is filled but the platform wants the last step from you: finish it in the Chrome window, then mark it published.</p><form method="post" action="/operator/{{ t.id }}/mark" class="inline"><button class="secondary">I published it myself</button></form>{% endif %}
+{% endif %}
+{% if t.url %}<p><a href="{{ t.url }}">{{ t.url }}</a></p>{% endif %}
+</div>
+{% endfor %}
+{% endblock %}

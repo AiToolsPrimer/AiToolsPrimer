@@ -1,0 +1,57 @@
+{% extends "base.html" %}{% block body %}
+<h1>The office <span class="phase">· phase: <b id="phase">{{ board.phase or 'idle' }}</b> · model in memory: <b id="resident">{{ board.resident_model or 'none' }}</b></span></h1>
+<div class="grid" id="desks">
+{% for d in board.desks %}
+<div class="card desk {{ d.status }}" data-key="{{ d.key }}">
+  <div style="display:flex;justify-content:space-between;align-items:baseline"><strong>{{ d.name }}</strong><span class="pill {{ 'work' if d.status=='working' else 'bad' if d.status=='error' else 'warn' if d.status=='waiting' else '' }} st">{{ d.status }}</span></div>
+  <small class="muted">{{ d.role }}</small>
+  <div class="task" style="margin-top:6px;min-height:22px">{{ d.task or '' }}</div>
+  <div class="step muted" style="font-size:13px">{{ d.step or '' }}{% if d.step_count %} ({{ d.step_index }}/{{ d.step_count }}){% endif %}</div>
+  <div class="bar"><i style="width:{{ (100 * d.step_index / d.step_count) if d.step_count else (100 if d.status=='working' else 0) }}%"></i></div>
+  <small class="muted meta">{{ d.model or '' }}{% if d.elapsed_s %} · {{ d.elapsed_s }}s{% endif %} · today: {{ d.done_today }} done{% if d.errors_today %}, {{ d.errors_today }} errors{% endif %}</small>
+  <div class="last muted" style="font-size:12px;margin-top:4px">{{ d.last_result }}</div>
+</div>
+{% endfor %}
+</div>
+
+<div class="grid" style="margin-top:14px">
+<div class="card" style="grid-column: span 2"><h2>Live feed</h2><div class="feed" id="feed">{% for e in board.events %}<div class="k-{{ e.kind }}">{{ e.at }} <b>{{ e.name }}</b> {{ e.text }}</div>{% endfor %}</div></div>
+<div class="card"><h2>Run now</h2>
+<form method="post" action="/run/daily"><button>Daily cycle: research → plan → produce</button></form><br>
+<form method="post" action="/run/community"><button class="secondary">Check comments</button></form>
+<form method="post" action="/run/analyst" class="inline"><button class="secondary">Analyst lessons</button></form>
+<form method="post" action="/run/scout" class="inline"><button class="secondary">Scout platforms</button></form>
+<form method="post" action="/run/news_watch" class="inline"><button class="secondary">Platform news watch</button></form>
+<hr style="border-color:var(--line)">
+<form method="post" action="/run/video"><label>Video topic</label><input type="text" name="topic" placeholder="Five free PDF editors tested on a real contract"><label>Angle</label><input type="text" name="angle" placeholder="what worked, what broke"><label>Length (seconds, max 240)</label><input type="number" name="seconds" value="180" min="30" max="240"><br><br><button>Make a video</button></form>
+<hr style="border-color:var(--line)">
+<form method="post" action="/run/post"><label>Post topic</label><input type="text" name="topic"><label>Platform</label><select name="platform">{% for n,p in status.platforms.items() if 'post' in p.kinds %}<option value="{{ n }}">{{ p.label }}</option>{% endfor %}</select><br><br><button>Write a post</button></form>
+<p class="muted">Running: {% for n, alive in running.items() if alive %}<span class="pill work">{{ n }}</span> {% else %}nothing{% endfor %}</p>
+</div>
+</div>
+
+<div class="grid" style="margin-top:14px">
+<div class="card"><h2>Switches</h2>
+{% for name, value in status.toggles.items() if not name.startswith('platform:') %}
+<div class="switch"><div><strong>{{ name }}</strong><small>{{ toggle_help.get(name, '') }}</small></div>
+{% if name in locked %}<span class="pill ok">always on</span>{% else %}
+<form method="post" action="/toggle" class="inline"><input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="value" value="{{ '0' if value else '1' }}"><button class="{{ '' if value else 'secondary' }}">{{ 'ON' if value else 'off' }}</button></form>{% endif %}</div>
+{% endfor %}</div>
+<div class="card"><h2>Waiting for you</h2>{% if queued %}<table>{% for c in queued %}<tr><td><a href="/content/{{ c.id }}">#{{ c.id }}</a></td><td>{{ c.kind }}</td><td>{{ c.platform }}</td><td>{{ (c.title or c.body)[:60] }}</td></tr>{% endfor %}</table><p><a href="/queue">Open the queue →</a></p>{% else %}<p class="muted">Nothing waiting.</p>{% endif %}
+<h2 style="margin-top:14px">Platforms</h2><p>{% for n,p in status.platforms.items() %}<span class="pill {{ 'ok' if p.configured else '' }}" title="{{ p.mode }}">{{ n }}</span> {% endfor %}</p>
+<p class="muted">Corrections saved: {{ status.corrections }} · knowledge updates proposed: {{ status.knowledge_updates }}</p></div>
+</div>
+<script>
+(function(){
+  const feed=document.getElementById('feed');
+  function line(e){const d=document.createElement('div');d.className='k-'+e.kind;d.innerHTML='<span>'+e.at+'</span> <b>'+e.name+'</b> '+e.text.replace(/</g,'&lt;');feed.appendChild(d);while(feed.children.length>300)feed.removeChild(feed.firstChild);feed.scrollTop=feed.scrollHeight;}
+  feed.scrollTop=feed.scrollHeight;
+  try{const es=new EventSource('/events');es.onmessage=ev=>{try{line(JSON.parse(ev.data));}catch(e){}};}catch(e){}
+  async function refresh(){try{const r=await fetch('/api/office');const b=await r.json();document.getElementById('phase').textContent=b.phase||'idle';document.getElementById('resident').textContent=b.resident_model||'none';
+    for(const d of b.desks){const el=document.querySelector('.desk[data-key="'+d.key+'"]');if(!el)continue;el.className='card desk '+d.status;const st=el.querySelector('.st');st.textContent=d.status;st.className='pill st '+(d.status==='working'?'work':d.status==='error'?'bad':d.status==='waiting'?'warn':'');
+    el.querySelector('.task').textContent=d.task||'';el.querySelector('.step').textContent=(d.step||'')+(d.step_count?' ('+d.step_index+'/'+d.step_count+')':'');el.querySelector('.bar i').style.width=(d.step_count?100*d.step_index/d.step_count:(d.status==='working'?100:0))+'%';
+    el.querySelector('.meta').textContent=(d.model||'')+(d.elapsed_s?' · '+d.elapsed_s+'s':'')+' · today: '+d.done_today+' done'+(d.errors_today?', '+d.errors_today+' errors':'');el.querySelector('.last').textContent=d.last_result||'';}}catch(e){}}
+  setInterval(refresh,3000);
+})();
+</script>
+{% endblock %}

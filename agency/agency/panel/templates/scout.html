@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block body %}
+<h1>Scout: new places to be present</h1>
+<p class="muted">The scout finds platforms and prepares everything. Creating the account is your two-minute job, by design.</p>
+{% if not items %}<p class="muted">Nothing found yet. Run the scout from the dashboard.</p>{% endif %}
+{% for s in items %}<div class="card" style="margin-bottom:12px">
+<p><strong>{{ s.name }}</strong> <a href="{{ s.url }}">{{ s.url }}</a> <span class="pill">{{ s.kind }}</span> <span class="pill {{ 'ok' if s.free else 'warn' }}">{{ 'free' if s.free else 'free?' }}</span> {% if s.has_api %}<span class="pill ok">API</span>{% endif %} <span class="pill">fit {{ '%.0f'|format((s.fit_score or 0)*100) }}%</span> <span class="pill {{ 'ok' if s.status=='registered' else 'warn' if s.status=='kit_ready' else '' }}">{{ s.status }}</span></p>
+<p>{{ s.rationale }}</p>
+{% if s.signup_kit %}<details><summary>Sign-up kit</summary><table>{% for k, v in s.signup_kit.items() %}<tr><td><strong>{{ k }}</strong></td><td>{% if k.endswith('_asset') %}<img class="thumb" src="/asset/{{ v }}">{% elif v is iterable and v is not string %}<ul>{% for i in v %}<li>{{ i }}</li>{% endfor %}</ul>{% else %}{{ v }}{% endif %}</td></tr>{% endfor %}</table></details>{% endif %}
+<p>{% if s.status != 'kit_ready' and s.status != 'registered' %}<form method="post" action="/scout/{{ s.id }}/kit" class="inline"><button>Prepare sign-up kit</button></form>{% endif %}
+<form method="post" action="/scout/{{ s.id }}/registered" class="inline"><button class="secondary">I registered</button></form>
+<form method="post" action="/scout/{{ s.id }}/dismissed" class="inline"><button class="secondary">Dismiss</button></form></p>
+</div>{% endfor %}
+{% endblock %}

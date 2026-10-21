@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block body %}
+<h1>Approval queue</h1>
+{% if not items %}<p class="muted">Nothing waiting for you.</p>{% endif %}
+{% for c in items %}
+<div class="card" style="margin-bottom:14px">
+<p><strong><a href="/content/{{ c.id }}">#{{ c.id }}</a> · {{ c.kind }} · {{ c.platform }}</strong> <span class="muted">{{ c.created_at }} · hold: {{ c.meta.hold_reason }}{% if c.scheduled_for %} · scheduled {{ c.scheduled_for }} UTC{% endif %}</span></p>
+{% if c.title %}<p><strong>{{ c.title }}</strong></p>{% endif %}{% if c.meta.factcheck and c.meta.factcheck.removed %}<p class="muted">fact check removed {{ c.meta.factcheck.removed|length }} sentence(s) · <a href="/content/{{ c.id }}">details</a></p>{% endif %}{% if c.meta.first_comment %}<p class="muted">first comment: {{ c.meta.first_comment }}</p>{% endif %}
+{% for aid in c.assets %}{% set a = assets.get_asset(aid) %}{% if a %}{% if a.kind == 'image' %}<img class="thumb" src="/asset/{{ aid }}">{% else %}<a class="pill" href="/asset/{{ aid }}">{{ a.kind }} #{{ aid }}</a>{% endif %} {% endif %}{% endfor %}
+<form method="post" action="/approve/{{ c.id }}"><textarea name="body" rows="{{ 12 if c.kind == 'article' else 4 }}">{{ c.body }}</textarea><br>
+<button>Approve & publish</button> </form>
+<form method="post" action="/reject/{{ c.id }}" class="inline"><button class="danger">Reject</button></form>
+</div>
+{% endfor %}
+{% endblock %}

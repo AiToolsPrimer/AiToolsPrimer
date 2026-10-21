@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+state/
+!state/.gitkeep
+assets/
+config/agency.yaml
+.env
+*.log
+.pytest_cache/
+.DS_Store

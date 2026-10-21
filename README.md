@@ -14,6 +14,7 @@ The site is built as an island city: two squares and twenty-five towers. Thirtee
 
 ### On GitHub
 
+- [**agency**](agency/): the in-house marketing agency. A local brain (Qwen3.8-Flash-Next, one model in memory at a time) and specialist agents that research, write, verify every sentence against the guides, illustrate, film, voice, publish through official APIs or the agent's Chrome with a human click, and learn from corrections, on one Mac, with nothing to pay for. See [agency/README.md](agency/README.md) and [agency/GUIDA.md](agency/GUIDA.md).
 - [**crawlable**](https://github.com/AiToolsPrimer/crawlable): how many links does your page serve before JavaScript runs? A curl + grep check for sites whose navigation is drawn by a framework.
 
 ### Elsewhere

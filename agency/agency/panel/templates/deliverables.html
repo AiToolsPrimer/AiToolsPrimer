@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block body %}
+<h1>Deliverables</h1>
+<div class="grid">
+<div class="card"><h2>Morning briefing</h2>{% if briefing %}<p>{{ briefing.text }}</p><small class="muted">{{ briefing.at[:16] }}</small>{% else %}<p class="muted">No briefing yet. It is written ten minutes before the daily cycle.</p>{% endif %}
+<form method="post" action="/run/briefing"><button class="secondary">Write today's briefing now</button></form></div>
+<div class="card"><h2>Produce</h2>
+<form method="post" action="/run/plan"><button>Editorial plan for this month</button></form><br>
+<form method="post" action="/run/report"><button class="secondary">Monthly report (so far)</button></form><br>
+<form method="post" action="/campaign"><label>Campaign brief</label><textarea name="brief" rows="3" placeholder="Launch the new Mac backup guide to people who just bought a Mac"></textarea><label>Weeks</label><input type="number" name="weeks" value="4" min="1" max="12"><br><br><button>Design a campaign</button></form></div>
+</div>
+<div class="card" style="margin-top:14px"><h2>Documents</h2>
+<table><tr><th>when</th><th>kind</th><th>title</th><th></th></tr>{% for d in items %}<tr><td>{{ d.at[:16] }}</td><td>{{ d.kind }}</td><td>{{ d.title }}</td><td>{% if d.pdf_path %}<a href="/deliverable/{{ d.id }}/pdf">PDF</a> · {% endif %}<a href="/deliverable/{{ d.id }}/html">HTML</a></td></tr>{% else %}<tr><td colspan="4" class="muted">Nothing produced yet.</td></tr>{% endfor %}</table></div>
+{% endblock %}

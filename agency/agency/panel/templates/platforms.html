@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block body %}
+<h1>Platforms</h1>
+<table><tr><th>platform</th><th>status</th><th>on/off</th><th>how it publishes</th><th>accepts</th><th>notes</th></tr>
+{% for n, p in platforms.items() %}<tr>
+<td><strong>{{ p.label }}</strong><br><small class="muted">{{ n }}</small></td>
+<td>{% if p.configured() %}<span class="pill ok">ready</span>{% else %}<span class="pill warn">missing</span><br><small class="mono">{{ p.missing_env()|join(' ') }}</small>{% endif %}</td>
+<td><form method="post" action="/toggle" class="inline"><input type="hidden" name="name" value="platform:{{ n }}"><input type="hidden" name="value" value="{{ '0' if status.platforms[n].enabled else '1' }}"><button class="{{ '' if status.platforms[n].enabled else 'secondary' }}">{{ 'ON' if status.platforms[n].enabled else 'off' }}</button></form></td>
+<td><form method="post" action="/mode" class="inline"><input type="hidden" name="platform" value="{{ n }}"><select name="mode" onchange="this.form.submit()">{% for m in status.platforms[n].modes %}<option value="{{ m }}" {{ 'selected' if m == status.platforms[n].mode }}>{{ m }}</option>{% endfor %}</select></form></td>
+<td>{{ p.kinds|sort|join(', ') }}</td>
+<td><small>{{ p.free_tier_note }}</small><br><a href="{{ p.signup_url }}">keys</a> · <a href="{{ p.api_docs }}">API docs</a></td>
+</tr>{% endfor %}</table>
+<p class="muted">Modes: <b>api</b> publishes by itself through the official API · <b>browser</b> fills the post in the agent's Chrome and waits for your click · <b>intent</b> opens the platform pre-filled with one tap · <b>manual</b> prepares text and media to copy · <b>off</b>. Credentials live in <code>.env</code>; the panel never shows them.</p>
+{% endblock %}

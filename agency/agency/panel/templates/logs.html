@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block body %}
+<h1>Logs</h1>
+<div class="grid">
+<div class="card"><h2>Actions (policy decisions)</h2><table>{% for a in actions %}<tr><td class="muted">{{ a.at[11:19] }}</td><td>{{ a.kind }}</td><td>{{ a.platform }}</td><td><span class="pill {{ 'ok' if a.verdict=='allow' else 'bad' if a.verdict=='deny' else 'warn' }}">{{ a.verdict }}</span></td><td><small>{{ a.reason }}</small></td></tr>{% endfor %}</table></div>
+<div class="card"><h2>Blocked by the payment guard</h2>{% if not blocked %}<p class="muted">Nothing blocked so far.</p>{% endif %}<table>{% for b in blocked %}<tr><td class="muted">{{ b.at[11:19] }}</td><td>{{ b.method }}</td><td><small>{{ b.url[:80] }}</small></td><td><small>{{ b.reason }}</small></td></tr>{% endfor %}</table></div>
+</div>
+<div class="card" style="margin-top:16px"><h2>Events</h2><div class="mono">{% for e in events|reverse %}{{ e }}
+{% endfor %}</div></div>
+{% endblock %}
