@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block body %}
+<h1>Learning</h1>
+<div class="grid">
+<div class="card"><h2>Your corrections ({{ count }})</h2>
+<p class="muted">Every edit you make before approving is saved as a pair. From 300 pairs the single model can be fine-tuned on your style (scripts/finetune_lora.sh).</p>
+<div class="bar"><i style="width:{{ [100, count / 3]|min }}%"></i></div>
+{% for c in corrections[:30] %}<details><summary>#{{ c.content_id }} {{ c.platform }} {{ c.kind }} · {{ c.at[:16] }}</summary><p><small class="muted">before</small><br>{{ c.original }}</p><p><small class="muted">after</small><br>{{ c.edited }}</p></details>{% endfor %}</div>
+<div class="card"><h2>Lessons from the analyst</h2>{% for n in notes if n.source == 'analyst' %}<p><small class="muted">{{ n.at[:10] }}</small><br>{{ n.text }}</p>{% else %}<p class="muted">No lessons yet; the analyst writes them every evening once there are metrics.</p>{% endfor %}
+<h2 style="margin-top:12px">Last 30 days</h2><table><tr><th>platform</th><th>kind</th><th>title</th><th>impr.</th><th>likes</th><th>replies</th></tr>{% for m in metrics[:20] %}<tr><td>{{ m.platform }}</td><td>{{ m.kind }}</td><td>{{ (m.title or '')[:40] }}</td><td>{{ m.impressions or '' }}</td><td>{{ m.likes or '' }}</td><td>{{ m.replies or '' }}</td></tr>{% endfor %}</table></div>
+</div>
+{% endblock %}

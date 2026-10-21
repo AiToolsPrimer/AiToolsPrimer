@@ -11,6 +11,7 @@ from agency.safety.policy import Action, ActionKind, Decision
 
 class Analyst(Agent):
     role = "growth analyst"
+    desk = "analyst"
     temperature = 0.3
 
     def __init__(self, llm, store, brand, platforms: dict[str, Platform], submit: Callable[[Action, dict[str, Any]], Decision]):
@@ -18,6 +19,10 @@ class Analyst(Agent):
         self.platforms, self.submit = platforms, submit
 
     def collect(self, days: int = 30) -> int:
+        with self.report("collecting metrics"):
+            return self._collect(days)
+
+    def _collect(self, days: int = 30) -> int:
         n = 0
         since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).isoformat()
         for row in self.store.list_content(status="published", limit=500):
@@ -34,7 +39,11 @@ class Analyst(Agent):
                 n += 1
         return n
 
-    def report(self) -> str:
+    def lessons(self) -> str:
+        with self.report("writing the lessons of the last 14 days"):
+            return self._report()
+
+    def _report(self) -> str:
         summary = self.store.metrics_summary(14)
         if not summary:
             return "No metrics yet."

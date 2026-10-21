@@ -19,6 +19,7 @@ TREND_SOURCES = [
 
 class Strategist(Agent):
     role = "content strategist"
+    desk = "strategist"
     temperature = 0.5
 
     def __init__(self, llm, store, brand, http: GuardedHTTP):
@@ -73,8 +74,15 @@ class Strategist(Agent):
 
     # ------------------------------------------------------------------ thinking
     def opportunities(self, max_items: int = 8) -> list[dict[str, Any]]:
-        pages = self.site_inventory()
-        trends = self.trends()
+        with self.report("research: site inventory, trends, opportunities", steps=3):
+            self.progress("reading the site", 1, 3)
+            pages = self.site_inventory()
+            self.progress("scanning trends", 2, 3)
+            trends = self.trends()
+            self.progress("proposing opportunities", 3, 3)
+            return self._opportunities(pages, trends, max_items)
+
+    def _opportunities(self, pages, trends, max_items: int = 8) -> list[dict[str, Any]]:
         recent = self.store.recent_topics(30)
         notes = "\n".join(f"- {n['text'][:300]}" for n in self.store.recent_notes(8))
         data = self.ask_json(

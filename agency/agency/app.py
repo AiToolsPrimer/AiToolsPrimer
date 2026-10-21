@@ -28,10 +28,11 @@ from agency.media.video import VideoAssembler
 from agency.memory.store import Store
 from agency.models import registry
 from agency.models.host import BrainChoice, ModelHost
+from agency.office import Office
 from agency.platforms import build_all
 from agency.safety.payment_guard import GuardedHTTP
 from agency.safety.policy import PolicyEngine
-from agency.settings import ASSETS_DIR, ROOT, STATE_DIR, Settings, Toggles
+from agency.settings import ASSETS_DIR, ROOT, STATE_DIR, Prefs, Settings, Toggles
 
 log = logging.getLogger("agency")
 
@@ -45,7 +46,9 @@ class Agency:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.assets_dir.mkdir(parents=True, exist_ok=True)
         self.toggles = Toggles(self.state_dir / "toggles.json")
+        self.prefs = Prefs(self.state_dir / "prefs.json")
         self.events: list[str] = []
+        self.office = Office()
         s = self.settings
 
         # ---------------------------------------------------------------- models (one at a time)
@@ -83,7 +86,7 @@ class Agency:
         self.assembler = VideoAssembler(
             ff=self.ff, tts=self.tts, asr=self.asr, music=self.music, images=self.images, video_spec=self.models["video"], avatar_spec=self.models["avatar"],
             comfy=self.comfy, workflows_dir=wf, defaults=s.video, host=self.host, python=s.runtimes.python, dry_run=self.dry_run, video_command=s.media.video_command,
-            presenter_image=presenter if presenter.exists() else None, progress=self.note,
+            presenter_image=presenter if presenter.exists() else None, progress=self._video_progress,
         )
 
         # ---------------------------------------------------------------- knowledge
@@ -114,6 +117,11 @@ class Agency:
         self.scout = Scout(self.brain, self.store, brand, self.http, self.director.submit, image_agent=self.image_agent)
         self.analyst = Analyst(self.brain, self.store, brand, self.platforms, self.director.submit)
         self.director.community, self.director.scout, self.director.analyst = self.community, self.scout, self.analyst
+        for agent in (self.director, self.writer, self.second_writer, self.strategist, self.safety, self.factcheck, self.image_agent, self.video_agent, self.community, self.scout, self.analyst, self.news_watch):
+            if agent is not None:
+                agent.office = self.office
+        if self.second_writer is not None:
+            self.second_writer.desk = "second"
 
     # -------------------------------------------------------------------- brain selection
     def _pick_brain(self) -> registry.ModelSpec:
@@ -145,6 +153,10 @@ class Agency:
         return {"chosen": chosen, "results": results}
 
     # -------------------------------------------------------------------- events
+    def _video_progress(self, msg: str) -> None:
+        self.office.step("video", msg)
+        self.note(f"[video] {msg}")
+
     def note(self, msg: str) -> None:
         stamp = dt.datetime.now().strftime("%H:%M:%S")
         self.events.append(f"{stamp} {msg}")
@@ -152,7 +164,11 @@ class Agency:
         log.info(msg)
 
     def _model_event(self, e: dict[str, Any]) -> None:
+        self.office.model_event(e)
         self.note(f"[models] {e.get('kind')}: {e.get('model')} ({e.get('memory_gb')} GB)" + (f" reason={e.get('reason')}" if e.get("reason") else ""))
+
+    def mode_for(self, platform: str) -> str:
+        return self.prefs.get(f"mode:{platform}") or self.settings.mode_for(platform)
 
     # -------------------------------------------------------------------- status
     def status(self) -> dict[str, Any]:
@@ -167,9 +183,12 @@ class Agency:
             "resident": resident.name if resident else None,
             "resident_gb": self.host.resident_gb(),
             "budget_gb": self.settings.hardware.gpu_budget_gb,
-            "platforms": {n: {"label": p.label, "configured": p.configured(), "missing": p.missing_env(), "enabled": self.toggles.platform_enabled(n), "mode": self.settings.mode_for(n), "kinds": sorted(p.kinds), "note": p.free_tier_note} for n, p in self.platforms.items()},
+            "platforms": {n: {"label": p.label, "configured": p.configured(), "missing": p.missing_env(), "enabled": self.toggles.platform_enabled(n), "mode": self.mode_for(n), "modes": list(p.publish_modes), "kinds": sorted(p.kinds), "note": p.free_tier_note} for n, p in self.platforms.items()},
             "toggles": self.toggles.all(),
             "queued": len(self.store.list_content(status="queued")),
             "published": len(self.store.list_content(status="published")),
             "events": self.events[-50:],
+            "office": self.office.board(),
+            "corrections": self.store.count_corrections(),
+            "knowledge_updates": len(self.store.list_knowledge_updates()),
         }

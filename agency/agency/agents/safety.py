@@ -22,6 +22,7 @@ class SafetyVerdict:
 
 class Safety(Agent):
     role = "trust and safety editor"
+    desk = "safety"
     temperature = 0.0
 
     def __init__(self, llm: LocalLLM, store, brand: Brand, guard: LocalLLM | None = None, allowed_link_hosts: tuple[str, ...] = ()):

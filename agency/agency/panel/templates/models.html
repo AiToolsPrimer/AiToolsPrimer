@@ -1,7 +1,13 @@
 {% extends "base.html" %}{% block body %}
-<h1>Models · profile {{ status.profile }}</h1>
-<table><tr><th>task</th><th>chosen</th><th>runtime</th><th>memory</th><th>licence</th><th>alternatives</th></tr>
-{% for task, a in assignments.items() %}<tr><td><strong>{{ task }}</strong></td><td>{{ chosen[task].name }}<br><small class="mono">{{ chosen[task].id }}</small></td><td>{{ chosen[task].runtime }}</td><td>{{ chosen[task].memory_gb }} GB</td><td><small>{{ chosen[task].license }}</small></td><td><small>{% for alt in [a.primary] + a.alternates|list if alt.name != chosen[task].name %}{{ alt.name }}{% if not loop.last %}, {% endif %}{% endfor %}</small></td></tr>{% endfor %}
-</table>
-<p class="muted">Change the profile or override a task in <code>config/agency.yaml</code> (hardware.profile, models overrides). Profiles: {{ profiles|join(', ') }}.</p>
+<h1>Models · profile {{ status.profile }} · one model at a time</h1>
+<div class="card"><h2>Brain choice</h2>
+<p>Current brain: <strong>{{ status.brain }}</strong>{% if choice.at %} · benchmarked {{ choice.at[:16] }}{% else %} · not benchmarked on this Mac yet{% endif %}</p>
+{% if choice.results %}<table><tr><th>candidate</th><th>result</th><th>tokens/s</th><th>load</th><th></th></tr>{% for r in choice.results %}<tr><td>{{ r.model }}</td><td><span class="pill {{ 'ok' if r.ok else 'bad' }}">{{ 'ran' if r.ok else 'failed' }}</span></td><td>{{ r.tokens_per_s if r.tokens_per_s is defined else '' }}</td><td>{{ r.load_s if r.load_s is defined else '' }}{% if r.load_s is defined %}s{% endif %}</td><td><small class="muted">{{ r.error if r.error is defined else (r.reply if r.reply is defined else '') }}</small></td></tr>{% endfor %}</table>{% endif %}
+<form method="post" action="/run/benchmark"><button>Run the benchmark (loads each brain once, a few minutes)</button></form></div>
+<div class="card" style="margin-top:14px"><h2>Lineup</h2>
+<table><tr><th>task</th><th>chosen</th><th>precision</th><th>runtime</th><th>memory</th><th>licence</th><th>alternatives</th></tr>
+{% for task, a in assignments.items() %}<tr><td><strong>{{ task }}</strong></td><td>{{ chosen[task].name }}<br><small class="mono">{{ chosen[task].id }}</small></td><td><small>{{ chosen[task].precision }}</small></td><td>{{ chosen[task].runtime }}</td><td>{{ chosen[task].memory_gb }} GB</td><td><small>{{ chosen[task].license }}</small></td><td><small>{% for alt in [a.primary] + a.alternates|list if alt.name != chosen[task].name %}{{ alt.name }}{% if not loop.last %}, {% endif %}{% endfor %}</small></td></tr>{% endfor %}
+</table><p class="muted">Profiles: {{ profiles|join(', ') }}. Override a task in config/agency.yaml under models.overrides.</p></div>
+<div class="card" style="margin-top:14px"><h2>Recent loads and jobs</h2><div class="mono">{% for e in host_history|reverse %}{{ e.kind }} {{ e.model }} ({{ e.memory_gb }} GB){% if e.reason %} {{ e.reason }}{% endif %}
+{% endfor %}</div></div>
 {% endblock %}

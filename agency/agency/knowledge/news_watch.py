@@ -17,6 +17,7 @@ QUERY = "{label} algorithm change OR new rule OR policy update OR new limit {mon
 
 class NewsWatch(Agent):
     role = "platform policy analyst"
+    desk = "strategist"
     temperature = 0.2
 
     def __init__(self, llm, store, brand, http: GuardedHTTP, kb: KnowledgeBase):
@@ -67,7 +68,11 @@ class NewsWatch(Agent):
         keys = list(self.kb.cards)
         if max_cards:
             keys = keys[:max_cards]
-        found = {k: self.check_card(k) for k in keys}
+        with self.report("weekly platform news watch", steps=len(keys)):
+            found = {}
+            for i, k in enumerate(keys, 1):
+                self.progress(k, i, len(keys))
+                found[k] = self.check_card(k)
         for k in keys:
             if not found[k]:
                 self.store.touch_knowledge_check(k)

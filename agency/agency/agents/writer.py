@@ -24,6 +24,7 @@ PLATFORM_RULES: dict[str, str] = {
 
 class Writer(Agent):
     role = "senior copywriter"
+    desk = "writer"
     temperature = 0.7
     kb = None  # KnowledgeBase, injected by the app
 
@@ -33,6 +34,10 @@ class Writer(Agent):
         return PLATFORM_RULES.get(platform, "short, specific, useful.")
 
     def post(self, platform: str, topic: str, angle: str, link: str = "", facts: str = "", with_image: bool = False) -> dict[str, Any]:
+        with self.report(f"{platform} post: {topic[:60]}"):
+            return self._post(platform, topic, angle, link, facts, with_image)
+
+    def _post(self, platform: str, topic: str, angle: str, link: str = "", facts: str = "", with_image: bool = False) -> dict[str, Any]:
         rules = self.rules_for(platform)
         memory = self.memory_context(topic)
         data = self.ask_json(
@@ -47,6 +52,10 @@ class Writer(Agent):
         return data
 
     def article(self, topic: str, angle: str, link: str = "", facts: str = "", platform: str = "devto") -> dict[str, Any]:
+        with self.report(f"{platform} article: {topic[:60]}"):
+            return self._article(topic, angle, link, facts, platform)
+
+    def _article(self, topic: str, angle: str, link: str = "", facts: str = "", platform: str = "devto") -> dict[str, Any]:
         data = self.ask_json(
             f"Write a full article for {platform}.\nTopic: {topic}\nAngle: {angle}\nCanonical guide URL: {link or '(none)'}\n"
             f"Verified facts (only these): {facts or '(none: keep claims generic and mark anything that needs checking in [brackets])'}\n"
@@ -58,6 +67,10 @@ class Writer(Agent):
         return data
 
     def video_script(self, topic: str, angle: str, target_seconds: int, link: str = "", facts: str = "", presenter: bool = False) -> dict[str, Any]:
+        with self.report(f"video script ({target_seconds}s): {topic[:50]}"):
+            return self._video_script(topic, angle, target_seconds, link, facts, presenter)
+
+    def _video_script(self, topic: str, angle: str, target_seconds: int, link: str = "", facts: str = "", presenter: bool = False) -> dict[str, Any]:
         n_scenes = max(4, min(40, target_seconds // 9))
         return self.ask_json(
             f"Write the script for a YouTube video of about {target_seconds} seconds ({target_seconds//60} min {target_seconds%60} s).\n"

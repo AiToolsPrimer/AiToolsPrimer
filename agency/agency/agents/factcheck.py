@@ -100,6 +100,7 @@ class VerifyResult:
 
 class FactChecker(Agent):
     role = "fact checker"
+    desk = "factcheck"
     temperature = 0.0
 
     def __init__(self, llm, store, brand, http: GuardedHTTP):
@@ -114,6 +115,7 @@ class FactChecker(Agent):
             cached = self.store.get_facts(url)
             if cached is not None:
                 return cached
+        self.progress(f"reading {url[:60]}")
         try:
             r = self.http.get(url, headers={"Accept": "text/html"})
             if r.status_code >= 400:
@@ -140,6 +142,10 @@ class FactChecker(Agent):
 
     # ------------------------------------------------------------------ verification
     def verify(self, text: str, facts: list[dict[str, str]], *, kind: str = "post", allow_promises_from: str = "") -> VerifyResult:
+        with self.report(f"verifying a {kind} ({len(facts)} facts)"):
+            return self._verify(text, facts, kind=kind, allow_promises_from=allow_promises_from)
+
+    def _verify(self, text: str, facts: list[dict[str, str]], *, kind: str = "post", allow_promises_from: str = "") -> VerifyResult:
         result = VerifyResult(text=text)
         if not looks_english(text):
             result.language_ok = False

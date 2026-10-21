@@ -12,12 +12,17 @@ from agency.safety.policy import Action, ActionKind, Decision
 
 class CommunityManager(Agent):
     role = "community manager"
+    desk = "community"
 
     def __init__(self, llm, store, brand, writer: Writer, platforms: dict[str, Platform], submit: Callable[[Action, dict[str, Any]], Decision], safety=None, factcheck=None):
         super().__init__(llm, store, brand)
         self.writer, self.platforms, self.submit, self.safety, self.factcheck = writer, platforms, submit, safety, factcheck
 
     def collect(self, days: int = 14) -> int:
+        with self.report("reading comments under our posts"):
+            return self._collect(days)
+
+    def _collect(self, days: int = 14) -> int:
         since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).isoformat()
         new = 0
         for row in self.store.list_content(status="published", limit=300):
@@ -32,8 +37,14 @@ class CommunityManager(Agent):
         return new
 
     def respond(self) -> list[dict[str, Any]]:
+        pending = self.store.pending_engagement()
+        with self.report(f"answering {len(pending)} comment(s)", steps=len(pending)):
+            return self._respond(pending)
+
+    def _respond(self, pending) -> list[dict[str, Any]]:
         results = []
-        for e in self.store.pending_engagement():
+        for n, e in enumerate(pending, 1):
+            self.progress(f"comment by {e['author']}", n, len(pending))
             p = self.platforms.get(e["platform"])
             post = self.store.get_content(e["content_id"]) if e.get("content_id") else None
             if not p or not post:

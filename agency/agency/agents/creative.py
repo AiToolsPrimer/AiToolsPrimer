@@ -21,6 +21,7 @@ def _slug(text: str) -> str:
 
 class ImageAgent(Agent):
     role = "art director"
+    desk = "art"
     temperature = 0.6
 
     def __init__(self, llm, store, brand, images: Images, assets_dir: Path, vision=None):
@@ -29,12 +30,18 @@ class ImageAgent(Agent):
 
     def make(self, brief: str, size: str = "landscape", topic: str = "", attempts: int = 2) -> int:
         """Generate an image for a brief, quality-check it with the vision model, return the asset id."""
+        with self.report(f"image ({size}): {brief[:50]}", steps=attempts):
+            return self._make(brief, size, topic, attempts)
+
+    def _make(self, brief: str, size: str = "landscape", topic: str = "", attempts: int = 2) -> int:
         prompt = f"{brief}. Style: {STYLE}."
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         out = self.assets_dir / "images" / f"{stamp}-{_slug(topic or brief)}.png"
         last_issue = ""
         for attempt in range(attempts):
+            self.progress("generating" if attempt == 0 else f"retry {attempt}", attempt + 1, attempts)
             path = self.images.generate(prompt, out)
+            self.progress("quality check", attempt + 1, attempts)
             issue = self.inspect(path, brief)
             if not issue:
                 break
@@ -56,6 +63,7 @@ class ImageAgent(Agent):
 
 class VideoAgent(Agent):
     role = "video producer"
+    desk = "video"
     temperature = 0.6
 
     def __init__(self, llm, store, brand, writer: Writer, assembler: VideoAssembler, assets_dir: Path, max_seconds: int = 240):
@@ -63,6 +71,10 @@ class VideoAgent(Agent):
         self.writer, self.assembler, self.assets_dir, self.max_seconds = writer, assembler, assets_dir, max_seconds
 
     def produce(self, topic: str, angle: str, target_seconds: int | None = None, link: str = "", facts: str = "", presenter: bool = False, with_shorts: bool = True, verifier=None) -> dict[str, Any] | None:
+        with self.report(f"video ({min(target_seconds or self.max_seconds, self.max_seconds)}s): {topic[:50]}"):
+            return self._produce(topic, angle, target_seconds, link, facts, presenter, with_shorts, verifier)
+
+    def _produce(self, topic: str, angle: str, target_seconds: int | None = None, link: str = "", facts: str = "", presenter: bool = False, with_shorts: bool = True, verifier=None) -> dict[str, Any] | None:
         target = min(target_seconds or self.max_seconds, self.max_seconds)
         script = self.writer.video_script(topic, angle, target, link=link, facts=facts, presenter=presenter)
         factcheck = None

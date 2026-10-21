@@ -37,6 +37,7 @@ KIND_TO_ACTION = {"post": ActionKind.PUBLISH_POST, "image": ActionKind.PUBLISH_P
 
 class Director(Agent):
     role = "marketing director"
+    desk = "director"
     temperature = 0.4
 
     def __init__(
@@ -183,6 +184,10 @@ class Director(Agent):
     # ------------------------------------------------------------------ production
     def review(self, kind: str, draft: dict[str, Any], platform: str) -> str:
         """Editor pass. Returns '' when the draft is good, otherwise notes for the writer."""
+        with self.report(f"reviewing a {kind} for {platform}"):
+            return self._review(kind, draft, platform)
+
+    def _review(self, kind: str, draft: dict[str, Any], platform: str) -> str:
         data = self.ask_json(
             f"You are reviewing a {kind} for {platform} before publication. Our standards: {self.brand.voice}\n"
             f"Draft: {json.dumps(draft)[:6000]}\n"
@@ -321,14 +326,21 @@ class Director(Agent):
         return self.submit(action)
 
     # ------------------------------------------------------------------ cycles
+    def _phase(self, name: str) -> None:
+        if self.office is not None:
+            self.office.set_phase(name)
+        self.log(f"phase: {name}")
+
     def daily_cycle(self) -> dict[str, Any]:
         if not self.toggles.get("master_enabled"):
             return {"skipped": "master switch off"}
-        self.log("daily cycle: research")
+        self._phase("research")
         opportunities = self.strategist.opportunities()
-        self.log(f"daily cycle: {len(opportunities)} opportunities; planning")
-        plan = self.plan_day(opportunities)
+        self._phase(f"planning ({len(opportunities)} opportunities)")
+        with self.report("planning the day"):
+            plan = self.plan_day(opportunities)
         produced: list[int] = []
+        self._phase(f"production ({len(plan['items'])} items)")
         for item in plan["items"]:
             kind, topic, angle = item["kind"], item.get("topic", ""), item.get("angle", "")
             link, when = item.get("link", "") or "", item.get("when_utc")
@@ -346,6 +358,7 @@ class Director(Agent):
             except Exception as e:  # noqa: BLE001
                 self.log(f"item failed ({kind} {topic}): {e}")
         self.store.add_note("director", f"Day plan: {json.dumps(plan)[:1500]}")
+        self._phase("done")
         return {"opportunities": opportunities, "plan": plan, "content_ids": produced}
 
     def community_cycle(self) -> dict[str, Any]:
@@ -359,7 +372,7 @@ class Director(Agent):
         if not self.analyst or not self.toggles.get("master_enabled"):
             return ""
         self.analyst.collect()
-        return self.analyst.report()
+        return self.analyst.lessons()
 
     def scout_cycle(self) -> list[dict[str, Any]]:
         if not self.scout or not self.toggles.get("master_enabled"):

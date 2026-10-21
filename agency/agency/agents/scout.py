@@ -26,6 +26,7 @@ KNOWN = {"bluesky", "mastodon", "x", "youtube", "reddit", "telegram", "facebook"
 
 class Scout(Agent):
     role = "platform scout"
+    desk = "scout"
     temperature = 0.4
 
     def __init__(self, llm, store, brand, http: GuardedHTTP, submit: Callable[[Action, dict[str, Any]], Decision], image_agent=None):
@@ -49,11 +50,16 @@ class Scout(Agent):
         return out
 
     def run(self, max_new: int = 10) -> list[dict[str, Any]]:
+        with self.report("looking for new platforms", steps=len(QUERIES)):
+            return self._run(max_new)
+
+    def _run(self, max_new: int = 10) -> list[dict[str, Any]]:
         decision = self.submit(Action(ActionKind.SCOUT_SEARCH, "web"), {})
         if not decision.allowed:
             return [{"skipped": decision.reason}]
         raw: list[dict[str, str]] = []
-        for q in QUERIES:
+        for i, q in enumerate(QUERIES, 1):
+            self.progress(q[:50], i, len(QUERIES))
             raw.extend(self.search(q))
         seen, candidates = set(), []
         for r in raw:
@@ -82,6 +88,10 @@ class Scout(Agent):
         return added
 
     def prepare_kit(self, scout_id: int) -> dict[str, Any] | None:
+        with self.report(f"sign-up kit #{scout_id}"):
+            return self._prepare_kit(scout_id)
+
+    def _prepare_kit(self, scout_id: int) -> dict[str, Any] | None:
         rows = [r for r in self.store.list_scout() if r["id"] == scout_id]
         if not rows:
             return None

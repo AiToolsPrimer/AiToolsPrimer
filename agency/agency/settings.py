@@ -254,3 +254,31 @@ class Toggles:
         with self._lock:
             self._values[f"platform:{platform}"] = bool(value)
             self._save()
+
+
+class Prefs:
+    """Runtime preferences the panel can change without editing agency.yaml (publish modes, etc.)."""
+
+    def __init__(self, path: Path | None = None):
+        self.path = path or STATE_DIR / "prefs.json"
+        self._lock = threading.Lock()
+        self._values: dict[str, Any] = {}
+        if self.path.exists():
+            try:
+                self._values = json.loads(self.path.read_text())
+            except json.JSONDecodeError:
+                self._values = {}
+
+    def get(self, key: str, default: Any = None) -> Any:
+        with self._lock:
+            return self._values.get(key, default)
+
+    def set(self, key: str, value: Any) -> None:
+        with self._lock:
+            self._values[key] = value
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(self._values, indent=2, sort_keys=True))
+
+    def all(self) -> dict[str, Any]:
+        with self._lock:
+            return dict(self._values)

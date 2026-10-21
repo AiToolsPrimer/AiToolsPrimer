@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from contextlib import contextmanager
+
 from agency.llm.client import LocalLLM, Message
 from agency.memory.store import Store
 from agency.settings import Brand
@@ -9,10 +11,22 @@ from agency.settings import Brand
 
 class Agent:
     role: str = "agent"
+    desk: str = "director"          # which desk in the office this agent sits at
     temperature: float = 0.6
+    office = None                   # Office, injected by the app
 
     def __init__(self, llm: LocalLLM, store: Store, brand: Brand):
         self.llm, self.store, self.brand = llm, store, brand
+
+    def report(self, task: str, steps: int = 0):
+        """Context manager: shows this agent as working on ``task`` in the office."""
+        if self.office is None:
+            return _noop()
+        return self.office.working(self.desk, task, steps)
+
+    def progress(self, step: str, index: int | None = None, count: int | None = None) -> None:
+        if self.office is not None:
+            self.office.step(self.desk, step, index, count)
 
     def system(self, extra: str = "") -> str:
         b = self.brand
@@ -37,3 +51,8 @@ class Agent:
         if not hits:
             return "(no related memory)"
         return "\n".join(f"- [{h['ref_table']}#{h['ref_id']}] {h['text'][:300]}" for h in hits)
+
+
+@contextmanager
+def _noop():
+    yield

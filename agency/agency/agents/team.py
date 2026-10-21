@@ -33,6 +33,13 @@ class Team:
     def pick(self, kind: str, platform: str, brief: str, drafts: list[dict[str, Any]]) -> dict[str, Any]:
         if len(drafts) == 1:
             return drafts[0]
+        office = getattr(self.brain_writer, "office", None)
+        if office is not None:
+            with office.working("director", f"judging {len(drafts)} drafts for {platform}"):
+                return self._pick(kind, platform, brief, drafts)
+        return self._pick(kind, platform, brief, drafts)
+
+    def _pick(self, kind: str, platform: str, brief: str, drafts: list[dict[str, Any]]) -> dict[str, Any]:
         system = self.brain_writer.system("You are now the editor-in-chief choosing between drafts from the team.")
         user = (
             f"Brief for this {kind} on {platform}: {brief}\n\nDrafts:\n" + "\n\n".join(f"DRAFT {i}:\n{json.dumps(d, ensure_ascii=False)[:3500]}" for i, d in enumerate(drafts)) +
