@@ -22,9 +22,20 @@ class Strategist(Agent):
     desk = "strategist"
     temperature = 0.5
 
-    def __init__(self, llm, store, brand, http: GuardedHTTP):
+    def __init__(self, llm, store, brand, http: GuardedHTTP, indexnow=None, toggles=None):
         super().__init__(llm, store, brand)
         self.http = http
+        self.indexnow, self.toggles = indexnow, toggles
+
+    def push_new_urls(self, urls: list[str]) -> int:
+        """New site URLs go to IndexNow (Bing and partners) once."""
+        if not self.indexnow or (self.toggles is not None and not self.toggles.get("push_indexnow")):
+            return 0
+        fresh = self.store.new_site_urls(urls)
+        if fresh:
+            self.indexnow.submit(fresh)
+            self.store.mark_site_urls_submitted(fresh)
+        return len(fresh)
 
     # ------------------------------------------------------------------ research
     def site_inventory(self, max_pages: int = 60) -> list[dict[str, str]]:
@@ -77,6 +88,7 @@ class Strategist(Agent):
         with self.report("research: site inventory, trends, opportunities", steps=3):
             self.progress("reading the site", 1, 3)
             pages = self.site_inventory()
+            self.push_new_urls([p["url"] for p in pages])
             self.progress("scanning trends", 2, 3)
             trends = self.trends()
             self.progress("proposing opportunities", 3, 3)

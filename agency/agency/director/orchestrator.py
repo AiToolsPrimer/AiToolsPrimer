@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -23,7 +24,7 @@ from agency.agents.writer import Writer
 from agency.knowledge.base import KnowledgeBase, check_constraints, fix_for_platform
 from agency.memory.store import Store
 from agency.platforms.base import Platform, PublishItem
-from agency.safety.policy import Action, ActionKind, Decision, PolicyEngine, Verdict
+from agency.safety.policy import Action, ActionKind, Decision, PolicyEngine, Verdict, BROWSER_KINDS
 from agency.settings import Limits, Settings, Toggles
 
 POST_PLATFORMS = ("bluesky", "mastodon", "x", "threads", "linkedin", "facebook", "telegram", "reddit", "tumblr")
@@ -32,7 +33,7 @@ VIDEO_PLATFORMS = ("youtube",)
 SHORT_PLATFORMS = ("youtube", "tiktok", "instagram")
 IMAGE_PLATFORMS = ("instagram", "pinterest")
 
-KIND_TO_ACTION = {"post": ActionKind.PUBLISH_POST, "image": ActionKind.PUBLISH_POST, "article": ActionKind.PUBLISH_ARTICLE, "video": ActionKind.PUBLISH_VIDEO, "short": ActionKind.PUBLISH_VIDEO}
+KIND_TO_ACTION = {"post": ActionKind.PUBLISH_POST, "image": ActionKind.PUBLISH_POST, "article": ActionKind.PUBLISH_ARTICLE, "video": ActionKind.PUBLISH_VIDEO, "short": ActionKind.PUBLISH_VIDEO, "link": ActionKind.PUBLISH_POST, "answer": ActionKind.PUBLISH_POST}
 
 
 class Director(Agent):
@@ -60,10 +61,14 @@ class Director(Agent):
         kb: KnowledgeBase | None = None,
         factcheck: FactChecker | None = None,
         team: Team | None = None,
+        operator=None,
+        mode_for: Callable[[str], str] | None = None,
         log: Callable[[str], None] | None = None,
     ):
         super().__init__(llm, store, settings.brand)
         self.kb, self.factcheck, self.team = kb, factcheck, team
+        self.operator = operator
+        self.mode_for = mode_for or settings.mode_for
         self.settings, self.toggles, self.policy, self.platforms = settings, toggles, policy, platforms
         self.strategist, self.writer, self.safety = strategist, writer, safety
         self.image_agent, self.video_agent = image_agent, video_agent
@@ -77,7 +82,7 @@ class Director(Agent):
         decision = self.policy.evaluate(action)
         cid = action.payload.get("content_id")
         self.store.log_action(action.kind.value, action.platform, decision.verdict.value, decision.reason, cid, action.payload)
-        if decision.verdict is Verdict.ALLOW and action.kind in {ActionKind.PUBLISH_POST, ActionKind.PUBLISH_ARTICLE, ActionKind.PUBLISH_VIDEO}:
+        if decision.verdict is Verdict.ALLOW and action.kind in {ActionKind.PUBLISH_POST, ActionKind.PUBLISH_ARTICLE, ActionKind.PUBLISH_VIDEO, ActionKind.PREPARE_MANUAL, ActionKind.BROWSER_PUBLISH}:
             self._publish_now(action)
         elif decision.verdict is Verdict.ALLOW and action.kind is ActionKind.REPLY_OWN:
             self._reply_now(action, context)
@@ -90,10 +95,99 @@ class Director(Agent):
             self.store.update_content(cid, status="rejected", meta={**(self.store.get_content(cid) or {}).get("meta", {}), "reject_reason": decision.reason})
         return decision
 
+    def _action_for(self, row: dict[str, Any], safety_passed: bool | None = True, human_click: bool = False) -> Action:
+        """The outbound action for a content row, by the platform's publishing mode."""
+        mode = self.mode_for(row["platform"])
+        payload: dict[str, Any] = {"content_id": row["id"]}
+        if mode == "browser":
+            return Action(ActionKind.BROWSER_PUBLISH, row["platform"], {**payload, "human_click": human_click}, safety_passed=safety_passed)
+        if mode in ("intent", "manual"):
+            return Action(ActionKind.PREPARE_MANUAL, row["platform"], payload, safety_passed=safety_passed)
+        if mode == "off":
+            return Action(ActionKind.PUBLISH_POST, row["platform"], payload, safety_passed=safety_passed)
+        return Action(KIND_TO_ACTION.get(row["kind"], ActionKind.PUBLISH_POST), row["platform"], payload, safety_passed=safety_passed)
+
+    def _prepare_manual(self, cid: int) -> None:
+        row = self.store.get_content(cid)
+        if not row:
+            return
+        p = self.platforms.get(row["platform"])
+        meta = dict(row.get("meta", {}))
+        mode = self.mode_for(row["platform"])
+        item = PublishItem(kind=row["kind"], text=row.get("body") or "", title=row.get("title") or "", link=meta.get("link", ""))
+        if mode == "intent" and p is not None and hasattr(p, "intent_url"):
+            meta["intent_url"] = p.intent_url(item)
+        meta["manual_mode"] = mode
+        self.store.update_content(cid, status="manual", meta=meta)
+        self.log(f"prepared #{cid} for {row['platform']} ({mode})")
+
+    def _prepare_browser(self, cid: int) -> None:
+        row = self.store.get_content(cid)
+        if not row or self.operator is None:
+            return
+        meta = dict(row.get("meta", {}))
+        media = [self.store.get_asset(a)["path"] for a in row.get("assets", []) if self.store.get_asset(a)]
+        variables = {"publication": self.settings.platforms.get(row["platform"]).extra.get("publication", "") if self.settings.platforms.get(row["platform"]) else "", "blog_id": self.settings.platforms.get(row["platform"]).extra.get("blog_id", "") if self.settings.platforms.get(row["platform"]) else ""}
+        payload = {"content_id": cid, "text": row.get("body") or "", "title": row.get("title") or "", "body": row.get("body") or "", "link": meta.get("link", ""), "media": media, "variables": variables}
+        if self.office is not None:
+            self.office.begin("operator", f"filling {row['kind']} #{cid} on {row['platform']}")
+        task = self.operator.prepare(row["platform"], "publish", payload)
+        if self.office is not None:
+            self.office.end("operator", f"task {task.id}: {task.status}", ok=task.status != "failed")
+        meta.update({"browser_task": task.id, "browser_status": task.status, "screenshot": task.screenshot, "browser_error": task.error})
+        self.store.update_content(cid, status="ready_to_click" if task.status in ("ready", "needs_your_click") else "failed", meta=meta)
+
+    def browser_publish(self, task_id: int) -> Decision:
+        """The human clicked Publish in the dashboard: the operator clicks it in the browser."""
+        if self.operator is None:
+            return Decision(Verdict.DENY, "no browser operator")
+        task = self.operator.task(task_id)
+        if not task:
+            return Decision(Verdict.DENY, "no such browser task")
+        cid = task.payload.get("content_id")
+        row = self.store.get_content(cid) if cid else None
+        platform = task.platform
+        action = Action(ActionKind.BROWSER_PUBLISH if task.kind == "publish" else ActionKind.BROWSER_COMMENT, platform, {"content_id": cid, "human_click": True, "task": task_id}, safety_passed=True)
+        decision = self.policy.evaluate(action)
+        self.store.log_action(action.kind.value, platform, decision.verdict.value, decision.reason, cid, action.payload)
+        if not decision.allowed:
+            return decision
+        if self.office is not None:
+            self.office.begin("operator", f"clicking Publish on {platform} (task {task_id})")
+        task = self.operator.publish(task_id)
+        if self.office is not None:
+            self.office.end("operator", f"task {task_id}: {task.status}", ok=task.status != "failed")
+        if row:
+            meta = {**row["meta"], "browser_status": task.status, "screenshot": task.screenshot, "browser_error": task.error}
+            if task.status == "published":
+                self.store.update_content(cid, status="published", published_at=dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), remote_url=task.url, remote_id=f"browser-{task_id}", meta=meta)
+                self.log(f"published #{cid} on {platform} via the browser: {task.url}")
+            elif task.status == "needs_your_click":
+                self.store.update_content(cid, status="ready_to_click", meta=meta)
+            else:
+                self.store.update_content(cid, status="failed", meta=meta)
+        return Decision(Verdict.ALLOW, task.status)
+
+    def browser_cancel(self, task_id: int) -> None:
+        if self.operator is None:
+            return
+        task = self.operator.task(task_id)
+        if task:
+            self.operator.cancel(task_id)
+            cid = task.payload.get("content_id")
+            if cid and self.store.get_content(cid):
+                self.store.update_content(cid, status="rejected", meta={**self.store.get_content(cid)["meta"], "reject_reason": "browser task cancelled"})
+
     def _publish_now(self, action: Action) -> None:
         cid = action.payload["content_id"]
         row = self.store.get_content(cid)
         if not row:
+            return
+        if action.kind is ActionKind.PREPARE_MANUAL:
+            self._prepare_manual(cid)
+            return
+        if action.kind in BROWSER_KINDS:
+            self._prepare_browser(cid)
             return
         p = self.platforms.get(action.platform)
         if not p:
@@ -139,13 +233,12 @@ class Director(Agent):
             if decision.allowed:
                 self.store.update_content(cid, status="published", published_at=dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"))
             return decision
-        action = Action(KIND_TO_ACTION[row["kind"]], row["platform"], {"content_id": cid}, safety_passed=verdict.ok)
-        return self._force_through(action, {})
+        return self._force_through(self._action_for(row, safety_passed=verdict.ok), {})
 
     def _force_through(self, action: Action, context: dict[str, Any]) -> Decision:
         """A human click overrides 'approval_required' and the publishing switch, nothing else."""
         decision = self.policy.evaluate(action)
-        if decision.verdict is Verdict.QUEUE and decision.reason.startswith(("approval required", "publishing switch")):
+        if decision.verdict is Verdict.QUEUE and decision.reason.startswith(("approval required", "publishing switch", "browser action")):
             decision = Decision(Verdict.ALLOW, "approved by human")
         self.store.log_action(action.kind.value, action.platform, decision.verdict.value, decision.reason, action.payload.get("content_id"), action.payload)
         if decision.allowed:
@@ -271,7 +364,26 @@ class Director(Agent):
                 self.log(f"cover failed for {topic}: {e}")
         cid = self.store.add_content("article", platform, topic=topic, title=draft["title"], body=draft["markdown"], assets=assets, status="draft", scheduled_for=when_utc, meta={"link": link, "tags": draft.get("tags", []), "facts": facts, "extra": {"excerpt": draft.get("excerpt", "")}, "factcheck": report, "team": draft.get("_team")})
         self._gate(cid)
+        self._podcast_episode(cid, draft["title"], draft["markdown"], link, draft.get("excerpt", ""))
         return cid
+
+    def _podcast_episode(self, article_cid: int, title: str, markdown: str, link: str, summary: str) -> int | None:
+        podcast = getattr(self, "podcast", None)
+        if podcast is None or not self.toggles.get("make_podcast") or self.video_agent is None:
+            return None
+        try:
+            text = _markdown_to_speech(markdown)
+            intro = f"This episode is read by an AI voice. The facts come from the guides on {self.brand.site}. "
+            slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:60] or f"episode-{article_cid}"
+            wav = self.video_agent.assembler.tts.speak(intro + text, podcast.out_dir / f"{slug}.m4a")
+            mp3 = podcast.add_episode(slug, title, summary or title, wav, link or self.brand.site)
+            aid = self.store.add_asset("audio", mp3, prompt=title, model=self.video_agent.assembler.tts.spec.name, meta={"episode": slug})
+            cid = self.store.add_content("podcast", "podcast", topic=title, title=title, body=summary or title, assets=[aid], status="manual", meta={"link": link, "parent_article": article_cid, "manual_mode": "feed", "feed": str(podcast.out_dir / "feed.xml")})
+            self.log(f"podcast episode ready: {mp3.name}")
+            return cid
+        except Exception as e:  # noqa: BLE001
+            self.log(f"podcast episode failed: {e}")
+            return None
 
     def produce_video(self, topic: str, angle: str, link: str = "", facts: str = "", target_seconds: int | None = None, platforms: tuple[str, ...] = VIDEO_PLATFORMS, when_utc: str | None = None) -> list[int]:
         if not self.video_agent:
@@ -322,8 +434,10 @@ class Director(Agent):
             self.store.update_content(cid, status="rejected", meta={**row["meta"], "reject_reason": f"safety: {verdict.reason}"})
             self.log(f"safety rejected #{cid}: {verdict.reason}")
             return Decision(Verdict.DENY, verdict.reason)
-        action = Action(KIND_TO_ACTION[row["kind"]], row["platform"], {"content_id": cid}, safety_passed=True)
-        return self.submit(action)
+        if self.mode_for(row["platform"]) == "off":
+            self.store.update_content(cid, status="rejected", meta={**row["meta"], "reject_reason": f"{row['platform']} is switched off"})
+            return Decision(Verdict.DENY, "platform mode is off")
+        return self.submit(self._action_for(row))
 
     # ------------------------------------------------------------------ cycles
     def _phase(self, name: str) -> None:
@@ -383,3 +497,15 @@ class Director(Agent):
                 if f.get("id") and float(f.get("fit_score", 0)) >= 0.6:
                     self.scout.prepare_kit(f["id"])
         return found
+
+
+def _markdown_to_speech(md: str) -> str:
+    """Markdown → plain narration: drop links' URLs, code, images, emphasis marks and headings' hashes."""
+    text = re.sub(r"```.*?```", " ", md, flags=re.S)
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.M)
+    text = re.sub(r"[*_`>]+", "", text)
+    text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(r"\n{2,}", "\n\n", text)
+    return text.strip()

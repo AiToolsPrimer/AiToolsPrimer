@@ -29,7 +29,10 @@ from agency.memory.store import Store
 from agency.models import registry
 from agency.models.host import BrainChoice, ModelHost
 from agency.office import Office
+from agency.browser.operator import BrowserOperator, default_executable
 from agency.platforms import build_all
+from agency.platforms.indexnow import IndexNow
+from agency.platforms.podcast import PodcastFeed
 from agency.safety.payment_guard import GuardedHTTP
 from agency.safety.policy import PolicyEngine
 from agency.settings import ASSETS_DIR, ROOT, STATE_DIR, Prefs, Settings, Toggles
@@ -74,6 +77,9 @@ class Agency:
         self.store = Store(self.state_dir / "agency.db", embed=embed)
         self.http = GuardedHTTP(audit=self.store.audit_http, transport=http_transport)
         self.platforms = build_all(s, self.http, dry_run=self.dry_run)
+        self.indexnow = IndexNow(self.http, s.brand.site, key_dir=self.state_dir, dry_run=self.dry_run)
+        exe = s.browser.executable or (None if s.browser.channel else default_executable())
+        self.operator = BrowserOperator(ROOT / s.browser.profile_dir if not Path(s.browser.profile_dir).is_absolute() else Path(s.browser.profile_dir), self.assets_dir / "screenshots", headless=s.browser.headless, executable_path=exe, channel=(s.browser.channel or None) if not exe else None, dry_run=self.dry_run, pace_s=s.browser.pace_seconds, on_event=lambda kind, text: self.office.emit(kind, "operator", text))
 
         # ---------------------------------------------------------------- media
         wf = ROOT / "workflows"
@@ -102,7 +108,8 @@ class Agency:
             self.second_writer.kb = self.kb
         self.team = Team(self.writer, self.second_writer, judge=self.brain, mode=s.models.team_mode, candidates=s.models.candidates_per_draft)
         self.factcheck = FactChecker(self.brain, self.store, brand, self.http)
-        self.strategist = Strategist(self.brain, self.store, brand, self.http)
+        self.strategist = Strategist(self.brain, self.store, brand, self.http, indexnow=self.indexnow, toggles=self.toggles)
+        self.podcast = PodcastFeed(self.assets_dir / "podcast", brand.site, f"{brand.name} Audio", brand.tagline, s.media.podcast_base_url or f"{brand.site.rstrip('/')}/podcast", self.ff, author=brand.name)
         self.safety = Safety(self.brain, self.store, brand, guard=self.guard_llm if llm is None else None)
         self.image_agent = ImageAgent(self.brain, self.store, brand, self.images, self.assets_dir, vision=self.brain)
         self.video_agent = VideoAgent(self.brain, self.store, brand, self.writer, self.assembler, self.assets_dir, max_seconds=s.video.max_seconds)
@@ -110,8 +117,9 @@ class Agency:
         self.director = Director(
             llm=self.director_llm, store=self.store, settings=s, toggles=self.toggles, policy=self.policy, platforms=self.platforms,
             strategist=self.strategist, writer=self.writer, safety=self.safety, image_agent=self.image_agent, video_agent=self.video_agent, kb=self.kb,
-            factcheck=self.factcheck, team=self.team, log=self.note,
+            factcheck=self.factcheck, team=self.team, operator=self.operator, mode_for=self.mode_for, log=self.note,
         )
+        self.director.podcast = self.podcast if self.toggles.get("make_podcast") else None
         self.news_watch = NewsWatch(self.brain, self.store, brand, self.http, self.kb)
         self.community = CommunityManager(self.brain, self.store, brand, self.writer, self.platforms, self.director.submit, safety=self.safety, factcheck=self.factcheck)
         self.scout = Scout(self.brain, self.store, brand, self.http, self.director.submit, image_agent=self.image_agent)

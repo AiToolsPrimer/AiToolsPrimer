@@ -1,0 +1,19 @@
+platform: medium
+label: Medium
+kinds: [article]
+login_url: https://medium.com/m/signin
+compose_url: https://medium.com/new-story
+steps:
+  - action: wait
+    selector: 'h3[data-testid="editorTitleParagraph"], [data-testid="editorTitleParagraph"], .graf--title'
+  - action: type
+    selector: 'h3[data-testid="editorTitleParagraph"], [data-testid="editorTitleParagraph"], .graf--title'
+    value: title
+  - action: press
+    key: Enter
+  - action: type_markdown
+    value: body
+publish:
+  selector: 'button[data-action="show-prepublish"], [data-testid="publishButton"], button:has-text("Publish")'
+  needs_dialog: true
+notes: Medium's publish flow opens a dialog (topics, publication). The operator fills everything and stops before the final click.

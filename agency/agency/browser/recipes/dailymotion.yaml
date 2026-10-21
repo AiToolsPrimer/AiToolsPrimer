@@ -1,0 +1,21 @@
+platform: dailymotion
+label: Dailymotion
+kinds: [video]
+login_url: https://www.dailymotion.com/signin
+compose_url: https://www.dailymotion.com/partner/x/upload
+steps:
+  - action: upload
+    selector: 'input[type="file"]'
+    value: media
+  - action: wait
+    selector: 'input[name="title"], input[placeholder*="Title"]'
+  - action: fill
+    selector: 'input[name="title"], input[placeholder*="Title"]'
+    value: title
+  - action: fill
+    selector: 'textarea[name="description"], textarea'
+    value: text
+    optional: true
+publish:
+  selector: 'button:has-text("Publish"), button:has-text("Save")'
+  needs_dialog: true

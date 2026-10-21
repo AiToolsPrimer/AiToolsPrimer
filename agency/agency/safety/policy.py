@@ -25,6 +25,11 @@ class ActionKind(str, Enum):
     READ_ENGAGEMENT = "read_engagement"
     SCOUT_SEARCH = "scout_search"
     SIGNUP_KIT = "signup_kit"
+    BROWSER_PUBLISH = "browser_publish"   # the operator fills the post; you click Publish
+    BROWSER_COMMENT = "browser_comment"   # the operator fills a comment; you click Reply
+    PREPARE_MANUAL = "prepare_manual"     # intent link / copy-paste package; nothing leaves the machine
+    READ_MAIL = "read_mail"
+    NETWORK_WATCH = "network_watch"
     # Things that are always refused, kept here so the UI can explain why
     CREATE_ACCOUNT = "create_account"
     FRIEND_REQUEST = "friend_request"
@@ -55,9 +60,16 @@ TOGGLE_FOR_KIND = {
     ActionKind.READ_ENGAGEMENT: "collect_metrics",
     ActionKind.SCOUT_SEARCH: "discover_platforms",
     ActionKind.SIGNUP_KIT: "prepare_signup_kits",
+    ActionKind.BROWSER_PUBLISH: "browser_operator",
+    ActionKind.BROWSER_COMMENT: "browser_operator",
+    ActionKind.PREPARE_MANUAL: "write_posts",
+    ActionKind.READ_MAIL: "read_mail",
+    ActionKind.NETWORK_WATCH: "network_watch",
 }
 
-OUTBOUND_KINDS = {ActionKind.PUBLISH_POST, ActionKind.PUBLISH_ARTICLE, ActionKind.PUBLISH_VIDEO, ActionKind.REPLY_OWN}
+BROWSER_KINDS = {ActionKind.BROWSER_PUBLISH, ActionKind.BROWSER_COMMENT}
+
+OUTBOUND_KINDS = {ActionKind.PUBLISH_POST, ActionKind.PUBLISH_ARTICLE, ActionKind.PUBLISH_VIDEO, ActionKind.REPLY_OWN, ActionKind.BROWSER_PUBLISH, ActionKind.BROWSER_COMMENT}
 
 
 @dataclass
@@ -116,6 +128,11 @@ class PolicyEngine:
             limit_reason = self._rate_limited(action)
             if limit_reason:
                 return Decision(Verdict.QUEUE, limit_reason)
+            if action.kind in BROWSER_KINDS:
+                # a browser action is never automatic: the human click in the browser IS the approval
+                if not t.get("publishing") and not action.payload.get("human_click"):
+                    return Decision(Verdict.QUEUE, "publishing switch is off: held in the approval queue")
+                return Decision(Verdict.ALLOW, "ok") if action.payload.get("human_click") else Decision(Verdict.QUEUE, "browser action: waits for your click")
             if not t.get("publishing"):
                 return Decision(Verdict.QUEUE, "publishing switch is off: held in the approval queue")
             if t.get("approval_required"):
@@ -139,4 +156,8 @@ class PolicyEngine:
             n = self.count_recent(action.platform, action.kind, hour)
             if n >= self.limits.replies_per_platform_per_hour:
                 return f"hourly reply limit reached on {action.platform}"
+        if action.kind in BROWSER_KINDS:
+            n = self.count_recent("*browser*", action.kind, day)
+            if n >= self.limits.browser_actions_per_day:
+                return f"daily browser action limit reached ({n}/{self.limits.browser_actions_per_day})"
         return None

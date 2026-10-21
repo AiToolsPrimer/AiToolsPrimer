@@ -87,6 +87,15 @@ class VideoDefaults(BaseModel):
     default_visual_mode: Literal["generated", "image_motion", "mixed"] = "mixed"
 
 
+class Browser(BaseModel):
+    headless: bool = False          # on the Mac the window is visible: you watch what the operator does
+    channel: str = "chrome"         # use the installed Google Chrome; empty = Playwright's Chromium
+    executable: str = ""            # explicit browser binary (tests, Linux)
+    profile_dir: str = "state/chrome-profile"
+    pace_seconds: float = 0.6
+    actions_per_day: int = 15
+
+
 class Media(BaseModel):
     image_command: str = ""      # overrides the mflux template from the registry (or set to "comfyui")
     image_steps: int = 20
@@ -95,6 +104,7 @@ class Media(BaseModel):
     music_endpoint: str = "/generate"
     music_payload: dict[str, Any] = Field(default_factory=lambda: {"prompt": "{prompt}", "lyrics": "[inst]", "duration": "{seconds}", "format": "wav"})
     presenter_image: str = "config/presenter.png"
+    podcast_base_url: str = ""   # public URL of the folder where you host assets/podcast (feed.xml and MP3s)
 
 
 class Limits(BaseModel):
@@ -104,6 +114,7 @@ class Limits(BaseModel):
     videos_per_week: int = 3
     quiet_hours_utc: tuple[int, int] = (1, 6)  # no publishing between 01:00 and 06:00 UTC
     max_revisions: int = 2
+    browser_actions_per_day: int = 15
 
 
 class Director(BaseModel):
@@ -139,6 +150,7 @@ class Settings(BaseModel):
     runtimes: Runtimes = Runtimes()
     video: VideoDefaults = VideoDefaults()
     media: Media = Media()
+    browser: Browser = Browser()
     limits: Limits = Limits()
     director: Director = Director()
     platforms: dict[str, PlatformConfig] = Field(default_factory=dict)
@@ -196,6 +208,11 @@ TOGGLE_DEFAULTS: dict[str, bool] = {
     "discover_platforms": True,      # the scout looks for new places to be present
     "prepare_signup_kits": False,    # when a platform is found, build bio/avatar/first posts
     "collect_metrics": True,
+    "browser_operator": True,        # fill posts/comments in the agent's Chrome and wait for your click
+    "make_podcast": True,            # read every article into the podcast feed
+    "push_indexnow": True,           # tell Bing and partners about new site pages
+    "read_mail": False,              # read the inbox (read-only) and draft replies
+    "network_watch": True,           # follow affine sites/accounts and draft comments for your approval
     # Hard guarantees (not switchable from the panel; listed so the UI can show them)
     "block_payments": True,
     "block_account_creation": True,

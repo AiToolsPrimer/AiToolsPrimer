@@ -16,6 +16,9 @@
 {% if c.status == 'queued' %}<form method="post" action="/approve/{{ c.id }}"><textarea name="body" rows="{{ 14 if c.kind=='article' else 6 }}">{{ c.body }}</textarea><br><button>Approve & publish</button> <a class="btn secondary" href="/queue">back</a></form><form method="post" action="/reject/{{ c.id }}" class="inline"><button class="danger">Reject</button></form>
 {% else %}<div class="mono">{{ c.body }}</div>{% endif %}
 {% if c.meta.first_comment %}<p class="muted">First comment: {{ c.meta.first_comment }}</p>{% endif %}
+{% if c.meta.intent_url %}<p><a class="btn" href="{{ c.meta.intent_url }}" target="_blank">Open {{ c.platform }} pre-filled (one tap)</a></p>{% endif %}
+{% if c.status == 'manual' and not c.meta.intent_url %}<p class="muted">Manual mode: copy the text above{% if c.meta.feed %}; podcast feed at {{ c.meta.feed }}{% endif %}.</p>{% endif %}
+{% if c.status == 'ready_to_click' %}<p><a class="btn" href="/operator">Open the operator to publish (task {{ c.meta.browser_task }})</a></p>{% endif %}
 {% if c.meta.tags %}<p class="muted">tags: {{ c.meta.tags|join(', ') }}</p>{% endif %}</div>
 <div class="card"><h2>Fact check</h2>
 {% if c.meta.factcheck and c.meta.factcheck.removed %}<p>Removed because not supported by the guide:</p><ul>{% for r in c.meta.factcheck.removed %}<li><small>{{ r.sentence }}</small><br><span class="muted">{{ r.reason }}</span></li>{% endfor %}</ul>{% elif c.meta.factcheck %}<p class="muted">Every sentence passed.</p>{% else %}<p class="muted">Not applicable.</p>{% endif %}

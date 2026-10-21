@@ -17,7 +17,7 @@ from agency.settings import LOCKED_TOGGLES
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-NAV = ["office", "queue", "content", "assets", "platforms", "knowledge", "learning", "models", "scout", "logs"]
+NAV = ["office", "queue", "operator", "content", "assets", "platforms", "knowledge", "learning", "models", "scout", "logs"]
 
 
 def create_app(agency: Agency) -> FastAPI:
@@ -45,6 +45,39 @@ def create_app(agency: Agency) -> FastAPI:
     @app.get("/queue", response_class=HTMLResponse)
     def queue(request: Request):
         return render(request, "queue.html", items=agency.store.list_content(status="queued", limit=200), assets=agency.store)
+
+    @app.get("/operator", response_class=HTMLResponse)
+    def operator(request: Request):
+        import datetime as dt
+        clicks = agency.store.count_recent_actions("*browser*", "browser_publish", dt.timedelta(days=1))
+        st = agency.status()
+        st["limits_browser"] = agency.settings.limits.browser_actions_per_day
+        return TEMPLATES.TemplateResponse(request, "operator.html", {"request": request, "status": st, "page": "operator", "locked": LOCKED_TOGGLES, "toggle_help": TOGGLE_HELP, "nav": NAV, "tasks": agency.operator.tasks(), "clicks_today": clicks})
+
+    @app.get("/shot/{tid}")
+    def shot(tid: int):
+        t = agency.operator.task(tid)
+        if not t or not t.screenshot or not Path(t.screenshot).exists():
+            raise HTTPException(404)
+        return FileResponse(t.screenshot)
+
+    @app.post("/operator/{tid}/{what}")
+    def operator_action(tid: int, what: str):
+        if what == "publish":
+            d = agency.director.browser_publish(tid)
+            agency.office.emit("approve", "operator", f"task {tid}: {d.reason}")
+        elif what == "cancel":
+            agency.director.browser_cancel(tid)
+        elif what == "mark":
+            t = agency.operator.task(tid)
+            if t:
+                t.status = "published"
+                cid = t.payload.get("content_id")
+                if cid and agency.store.get_content(cid):
+                    import datetime as dt
+                    agency.store.update_content(cid, status="published", published_at=dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), remote_id=f"browser-{tid}")
+                    agency.store.log_action("browser_publish", t.platform, "allow", "published by hand after the operator filled it", cid, {"task": tid})
+        return RedirectResponse("/operator", status_code=303)
 
     @app.get("/content", response_class=HTMLResponse)
     def content(request: Request, status: str | None = None):
@@ -170,6 +203,7 @@ def create_app(agency: Agency) -> FastAPI:
             "scout": agency.director.scout_cycle,
             "news_watch": agency.news_watch.run,
             "benchmark": agency.benchmark_brains,
+            "logins": lambda: agency.operator.open_logins(),
             "video": lambda: agency.director.produce_video(topic or "a guide from our site", angle or "practical, verified", target_seconds=seconds or None),
             "post": lambda: agency.director.produce_post(platform, topic or "a guide from our site", angle or "practical, verified", with_image=True),
         }

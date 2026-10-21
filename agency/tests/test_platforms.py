@@ -8,7 +8,7 @@ from agency.settings import Settings
 
 def test_dry_run_everywhere_and_limits():
     ps = build_all(Settings(), GuardedHTTP(), dry_run=True)
-    assert len(ps) == 17
+    assert len(ps) == 26
     for name, p in ps.items():
         if name == "x":
             continue
@@ -39,6 +39,8 @@ def test_x_is_never_published_through_the_paid_api():
     assert Settings().mode_for("x") == "browser" and Settings().mode_for("bluesky") == "api"
 
 
-def test_medium_is_manual():
+def test_medium_and_browser_only_platforms_never_use_an_api():
     ps = build_all(Settings(), GuardedHTTP(), dry_run=False)
-    assert not ps["medium"].configured()
+    for name in ("medium", "substack", "linkedin_articles", "blogger", "dailymotion"):
+        assert "api" not in ps[name].publish_modes
+        assert not ps[name].publish(PublishItem(kind=sorted(ps[name].kinds)[0], text="x", title="t")).ok

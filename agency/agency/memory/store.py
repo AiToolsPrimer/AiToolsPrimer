@@ -121,6 +121,11 @@ CREATE TABLE IF NOT EXISTS corrections (
   original TEXT NOT NULL,
   edited TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS site_urls (
+  url TEXT PRIMARY KEY,
+  first_seen TEXT NOT NULL,
+  submitted_at TEXT
+);
 CREATE TABLE IF NOT EXISTS vectors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ref_table TEXT NOT NULL,
@@ -215,7 +220,12 @@ class Store:
 
     def count_recent_actions(self, platform: str, kind: str, window: dt.timedelta, verdict: str = "allow") -> int:
         since = (dt.datetime.now(dt.timezone.utc) - window).isoformat()
-        rows = self._rows("SELECT COUNT(*) AS n FROM actions WHERE platform=? AND kind=? AND verdict=? AND at>=?", (platform, kind, verdict, since))
+        if platform == "*browser*":
+            rows = self._rows("SELECT COUNT(*) AS n FROM actions WHERE kind IN ('browser_publish','browser_comment') AND verdict=? AND at>=?", (verdict, since))
+        elif platform == "*":
+            rows = self._rows("SELECT COUNT(*) AS n FROM actions WHERE kind=? AND verdict=? AND at>=?", (kind, verdict, since))
+        else:
+            rows = self._rows("SELECT COUNT(*) AS n FROM actions WHERE platform=? AND kind=? AND verdict=? AND at>=?", (platform, kind, verdict, since))
         return int(rows[0]["n"])
 
     def list_actions(self, limit: int = 200) -> list[dict[str, Any]]:
@@ -278,6 +288,18 @@ class Store:
         for r in rows:
             r["signup_kit"] = json.loads(r["signup_kit"]) if r.get("signup_kit") else None
         return rows
+
+    # ----------------------------------------------------------------- site urls (IndexNow)
+    def new_site_urls(self, urls: list[str]) -> list[str]:
+        known = {r["url"] for r in self._rows("SELECT url FROM site_urls")}
+        fresh = [u for u in urls if u not in known]
+        for u in fresh:
+            self._exec("INSERT OR IGNORE INTO site_urls(url,first_seen) VALUES(?,?)", (u, utcnow()))
+        return fresh
+
+    def mark_site_urls_submitted(self, urls: list[str]) -> None:
+        for u in urls:
+            self._exec("UPDATE site_urls SET submitted_at=? WHERE url=?", (utcnow(), u))
 
     # ----------------------------------------------------------------- facts & corrections
     def get_facts(self, url: str, max_age_days: int = 14) -> list[dict[str, Any]] | None:

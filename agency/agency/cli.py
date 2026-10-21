@@ -125,6 +125,23 @@ def cmd_post(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_chrome_login(args: argparse.Namespace) -> int:
+    """Open the agent's own Chrome on the login pages so you can sign in once (cookies stay in state/chrome-profile)."""
+    from agency.app import Agency
+
+    a = Agency(dry_run=True)
+    a.operator.dry_run = False
+    a.operator.headless = False
+    opened = a.operator.open_logins(args.platforms or None)
+    print("Opened:", ", ".join(opened) or "nothing (no recipes matched)")
+    print("Log in on each tab, then press Enter here to close the browser. Your logins are kept for the operator.")
+    try:
+        input()
+    finally:
+        a.operator.close()
+    return 0
+
+
 def cmd_queue(args: argparse.Namespace) -> int:
     from agency.app import Agency
 
@@ -187,6 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_post)
     sub.add_parser("queue", help="list items waiting for approval").set_defaults(fn=cmd_queue)
+    p = sub.add_parser("chrome-login", help="open the agent's Chrome on the platforms' login pages (log in once)")
+    p.add_argument("platforms", nargs="*", help="recipe names, e.g. x medium substack")
+    p.set_defaults(fn=cmd_chrome_login)
     p = sub.add_parser("approve", help="approve and publish a queued item")
     p.add_argument("id", type=int)
     p.set_defaults(fn=cmd_approve)

@@ -1,0 +1,17 @@
+platform: substack
+label: Substack
+kinds: [article, post]
+login_url: https://substack.com/sign-in
+compose_url: https://{publication}.substack.com/publish/post
+steps:
+  - action: wait
+    selector: 'textarea[placeholder*="Title"], [data-testid="post-title"], .post-title'
+  - action: fill
+    selector: 'textarea[placeholder*="Title"], [data-testid="post-title"], .post-title'
+    value: title
+  - action: type_markdown
+    selector: '.ProseMirror, [contenteditable="true"]'
+    value: body
+publish:
+  selector: 'button:has-text("Continue"), button:has-text("Publish")'
+  needs_dialog: true

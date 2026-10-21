@@ -1,0 +1,13 @@
+platform: tumblr_browser
+label: Tumblr (browser)
+kinds: [post, article]
+login_url: https://www.tumblr.com/login
+compose_url: https://www.tumblr.com/new/text
+steps:
+  - action: wait
+    selector: '[contenteditable="true"]'
+  - action: type_markdown
+    selector: '[contenteditable="true"]'
+    value: body
+publish:
+  selector: 'button:has-text("Post now"), button:has-text("Post")'

@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Compose</title></head>
+<body>
+<div id="app">
+  <div data-testid="tweetTextarea_0" contenteditable="true" style="border:1px solid #ccc;min-height:60px;padding:8px"></div>
+  <input data-testid="fileInput" type="file" multiple>
+  <button data-testid="tweetButton" onclick="publish()">Post</button>
+  <div id="result"></div>
+</div>
+<script>
+function publish(){
+  var text = document.querySelector('[data-testid="tweetTextarea_0"]').innerText;
+  var a = document.createElement('a');
+  a.href = 'https://x.com/aitoolsprimer/status/1234567890';
+  a.textContent = 'View post: ' + text;
+  document.getElementById('result').appendChild(a);
+}
+</script>
+</body></html>

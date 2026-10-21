@@ -1,0 +1,17 @@
+platform: blogger
+label: Blogger
+kinds: [article]
+login_url: https://www.blogger.com
+compose_url: https://www.blogger.com/blog/post/edit/{blog_id}
+steps:
+  - action: wait
+    selector: 'input[aria-label="Title"], input[placeholder="Title"]'
+  - action: fill
+    selector: 'input[aria-label="Title"], input[placeholder="Title"]'
+    value: title
+  - action: type_markdown
+    selector: '[contenteditable="true"], .editable'
+    value: body
+publish:
+  selector: 'button:has-text("Publish")'
+  needs_dialog: true

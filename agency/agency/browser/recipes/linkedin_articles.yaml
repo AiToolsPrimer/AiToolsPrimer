@@ -1,0 +1,17 @@
+platform: linkedin_articles
+label: LinkedIn Articles
+kinds: [article]
+login_url: https://www.linkedin.com/login
+compose_url: https://www.linkedin.com/article/new/
+steps:
+  - action: wait
+    selector: '.article-editor-headline__textarea, [data-placeholder="Title"], textarea'
+  - action: fill
+    selector: '.article-editor-headline__textarea, [data-placeholder="Title"], textarea'
+    value: title
+  - action: type_markdown
+    selector: '.article-editor-content__textarea, [contenteditable="true"]'
+    value: body
+publish:
+  selector: 'button:has-text("Next"), button:has-text("Publish")'
+  needs_dialog: true
