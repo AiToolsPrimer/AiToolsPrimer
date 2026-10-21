@@ -44,6 +44,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print("Tools")
     for tool in (s.runtimes.ffmpeg, s.runtimes.ffprobe, s.runtimes.lms_cli, "llama-server", "mflux-generate-qwen", "parakeet-mlx"):
         row(tool, shutil.which(tool) is not None, "" if shutil.which(tool) else "not on PATH")
+    from agency.browser.operator import default_executable
+    chrome = shutil.which("google-chrome") or shutil.which("chrome") or default_executable() or ("/Applications/Google Chrome.app" if Path("/Applications/Google Chrome.app").exists() else None)
+    row("browser for the operator", chrome is not None, chrome or "install Google Chrome (brew install --cask google-chrome) or Playwright's Chromium")
     print("Servers")
     for name, url in (("LM Studio", s.runtimes.lmstudio_url + "/v1/models"), ("ComfyUI", s.runtimes.comfyui_url + "/system_stats"), ("ACE-Step", s.runtimes.acestep_url)):
         try:
@@ -142,6 +145,44 @@ def cmd_chrome_login(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_briefing(args: argparse.Namespace) -> int:
+    from agency.app import Agency
+
+    a = Agency(dry_run=True if args.dry_run else None)
+    out = a.director.briefing(voice=args.voice)
+    print(out["text"])
+    if out.get("audio"):
+        print(f"\n(spoken version: {out['audio']})")
+    return 0
+
+
+def cmd_plan(args: argparse.Namespace) -> int:
+    import datetime as dt
+
+    from agency.app import Agency
+
+    a = Agency(dry_run=True if args.dry_run else None)
+    today = dt.date.today()
+    platforms = [n for n, p in a.platforms.items() if a.toggles.platform_enabled(n) and a.mode_for(n) != "off"]
+    if args.what == "plan":
+        out = a.deliverables.monthly_plan(today.year, today.month, platforms)
+    elif args.what == "report":
+        out = a.deliverables.monthly_report(today.year, today.month)
+    else:
+        out = a.deliverables.campaign(args.brief or "a campaign for our strongest guide", platforms, weeks=args.weeks)
+    print(out.get("pdf") or out.get("html"))
+    return 0
+
+
+def cmd_outreach(args: argparse.Namespace) -> int:
+    from agency.app import Agency
+
+    a = Agency(dry_run=True if args.dry_run else None)
+    fns = {"network": a.director.network_cycle, "mail": a.director.mail_cycle, "pr": a.director.pr_cycle, "questions": a.director.questions_cycle, "scout": a.director.scout_cycle, "news": a.news_watch.run, "style": a.refresh_style}
+    print(json.dumps(fns[args.what](), indent=2, default=str))
+    return 0
+
+
 def cmd_queue(args: argparse.Namespace) -> int:
     from agency.app import Agency
 
@@ -204,6 +245,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_post)
     sub.add_parser("queue", help="list items waiting for approval").set_defaults(fn=cmd_queue)
+    p = sub.add_parser("briefing", help="the morning briefing (add --voice for the spoken version)")
+    p.add_argument("--voice", action="store_true")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(fn=cmd_briefing)
+    p = sub.add_parser("deliver", help="produce a deliverable: plan | report | campaign")
+    p.add_argument("what", choices=["plan", "report", "campaign"])
+    p.add_argument("--brief", default="")
+    p.add_argument("--weeks", type=int, default=4)
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(fn=cmd_plan)
+    p = sub.add_parser("outreach", help="run one outreach job: network | mail | pr | questions | scout | news | style")
+    p.add_argument("what", choices=["network", "mail", "pr", "questions", "scout", "news", "style"])
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(fn=cmd_outreach)
     p = sub.add_parser("chrome-login", help="open the agent's Chrome on the platforms' login pages (log in once)")
     p.add_argument("platforms", nargs="*", help="recipe names, e.g. x medium substack")
     p.set_defaults(fn=cmd_chrome_login)

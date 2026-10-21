@@ -1,117 +1,113 @@
 # AI Tools Primer Agency
 
 A marketing agency that runs on one Mac, with no API tokens and nothing to pay for.
-A **director** model plans and reviews; specialist **agents** research, write, illustrate,
-film, voice, score, publish and learn; a **control panel** gives you the switches,
-the approval queue and the logs. Everything is produced in English.
+A **director** model plans and reviews; specialist **agents** research, write, verify,
+illustrate, film, voice, score, publish and learn; an **office** dashboard shows every
+agent at work in real time, with the switches, the approval queue and the logs.
+Everything produced is in English. Everything that leaves the Mac goes through official
+APIs, or through the agent's own Chrome with your click.
 
-Target machine: **Mac mini M5 Pro, 64 GB**. Every model was picked against independent
-leaderboards with two hard filters: it runs on Apple Silicon, and its licence allows
-commercial use. The evidence is in [docs/MODELS.md](docs/MODELS.md).
+Target machine: **Mac mini M5 Pro, 64 GB, one model in memory at a time.** Every model was
+chosen against independent leaderboards with two hard filters: it runs on Apple Silicon,
+and its licence allows commercial use. Evidence: [docs/MODELS.md](docs/MODELS.md).
 
-## What it does
+## The brain and the team
 
-| Agent | Job | Model |
+| Role | Model | Precision |
 |---|---|---|
-| Director | reads the strategist, plans the day, commissions work, reviews drafts, decides what goes out | Qwen3.8-27B |
-| Strategist | inventories the site, scans free trend sources (HN, Reddit, Google Trends), proposes angles | Qwen3.8-27B |
-| Writer | posts, threads, articles, captions, video scripts, replies, per-platform rules | Qwen3.8-27B |
-| Art director | illustrations, covers, thumbnails, avatars; vision QA on every picture | Qwen-Image-2512 + Qwen3-VL-8B |
-| Video producer | videos **up to 4 minutes**: script → scenes → clips/stills → voice → music → subtitles → master + vertical shorts | LTX-2.5, Chatterbox, ACE-Step 1.5, Parakeet |
-| Community manager | reads comments under *our* posts and answers them | Qwen3.8-27B |
-| Scout | finds new free platforms worth a presence and prepares a sign-up kit (handle, bios, avatar, banner, first posts) | Qwen3.8-27B |
-| Analyst | pulls our metrics through the official APIs, writes what worked | Qwen3.8-27B |
-| Safety | brand rules + Qwen3Guard before anything leaves | Qwen3Guard-Gen-4B |
+| Brain (director, strategist, writer, judge, fact checker, vision) | Qwen3.8-Flash-Next, 125B MoE, 6B active | ~4-bit, n-gram table on the SSD |
+| Second pen and automatic fallback | Qwen3.8-27B | 8-bit |
+| Images | Qwen-Image-2512 | 8-bit (mflux) |
+| Image editing | Qwen-Image-Edit-2511 | GGUF Q8 (ComfyUI) |
+| Video, up to 4 minutes | LTX-2.5 | bf16 (MLX) |
+| Presenter | LTX MLX audio-to-video | |
+| Voice | Step-Audio-EditX (Kokoro, Chatterbox fallback) | int8 |
+| Transcription | Parakeet TDT 0.6B v2 | |
+| Music | ACE-Step 1.5 | |
+| Memory | Qwen3-Embedding-8B | |
+| Safety | Qwen3Guard-Gen-4B | |
 
-Publishing goes through official APIs only, to accounts you connect with your own keys:
-Bluesky, Mastodon, X, YouTube, Reddit, Telegram, Facebook Page, Instagram, Threads,
-LinkedIn, TikTok, Pinterest, WordPress, DEV, Hashnode, Tumblr. Medium has no API any
-more, so articles for it are prepared for a manual import.
+`agency doctor --benchmark` loads each brain candidate once on your Mac and keeps the
+strongest one that runs well; the 27B takes over automatically if Flash-Next ever fails.
+Two models draft every piece, the brain judges and merges (`models.team_mode`).
+
+## What it does, every day
+
+- **Research**: reads the site, scans Hacker News, Reddit and Google Trends, proposes angles tied to your guides; new site pages are pushed to IndexNow.
+- **Plan**: the day's items (or the monthly editorial plan when one exists).
+- **Write**: posts, threads, carousels, articles, scripts, captions, per the platform's knowledge card.
+- **Verify, sentence by sentence**: every sentence is checked against the facts extracted from the guide it links to; unsupported claims, numbers not in the facts and promise words without a fact are removed. Non-English text is rejected.
+- **Limits enforced by code**: character limits, hashtag caps, link placement (first comment on LinkedIn), AI labels.
+- **Illustrate and film**: images with a vision check; videos assembled scene by scene (generated clips or stills with camera motion, voice, ducked music, subtitles), vertical shorts cut from each.
+- **Safety, policy, queue**: brand rules, the guard model, your switches, rate limits, quiet hours, then the approval queue.
+- **Publish**: through the official API, or in the agent's Chrome with your click, or as a one-tap intent link, or as a copy-ready package, per platform.
+- **Community**: comments under our posts answered (your switch), comments on followed sources drafted and sent only after your approval, one at a time, capped per day.
+- **Outreach**: inbox read (read-only) and sorted, journalist requests pulled from the digests, replies and pitches drafted into Gmail Drafts; unlinked mentions and dead links on authoritative sites only (Tranco rank), with pitches.
+- **Learn**: metrics through the official APIs, lessons every evening, cadence adjusted, your corrections distilled into house style rules every Sunday, a training set for a LoRA fine-tune when there are enough pairs.
+- **Deliver**: monthly editorial plan, monthly report, campaign presentations, in PDF; a morning briefing (spoken if you like).
+- **Keep itself current**: a weekly news watch proposes updates to the platform cards; you apply them with a click.
 
 ## What it refuses to do, by design
 
-- **Pay for anything.** Every outbound request passes a guard that blocks payment
-  processors, ads/boost endpoints, checkout/billing/subscription URLs and any body
-  carrying a card number, CVV, IBAN or wallet address. The log shows every block.
-- **Create accounts.** The scout prepares everything; you click "sign up".
-- **Mass actions.** No automated follows, friend requests or comments on other people's
-  content. Those break every platform's terms and get accounts banned. Replies are
-  only ever written under our own posts (and can be set to draft-only).
+- **Pay for anything.** Every outbound request passes a guard that blocks payment processors, ads and boost endpoints, checkout, billing, subscription URLs and any body carrying a card number, CVV, IBAN or wallet address. X's API is pay-per-post, so X is browser-with-your-click only.
+- **Create accounts.** The scout finds platforms and prepares the kit (handle, bios, avatar, banner, first posts); you click "sign up".
+- **Mass actions.** No automated follows or friend requests, no comments on other people's content without your click, never in bulk, never through a CAPTCHA.
 
-These three are hard guarantees: the panel shows them, nothing can switch them off.
+These are hard guarantees: the dashboard shows them and nothing switches them off.
 
-## Switches (control panel)
+## Platforms (26)
 
-`master_enabled` (kill switch) · `publishing` · `approval_required` · `write_posts` ·
-`write_articles` · `make_images` · `make_videos` · `make_shorts` · `make_voiceover` ·
-`make_music` · `auto_reply_own_posts` · `draft_external_engagement` ·
-`discover_platforms` · `prepare_signup_kits` · `collect_metrics`, plus one switch per
-platform. Defaults: everything produced lands in the approval queue; nothing is published
-until you turn `publishing` on, and each item still needs your click until you turn
-`approval_required` off.
+API: Bluesky, Mastodon, YouTube, Reddit (manual by rule), Telegram, Facebook Page, Instagram, Threads, LinkedIn, TikTok, Pinterest, WordPress, DEV, Hashnode, Tumblr, Vimeo.
+Browser with your click: X, Medium, Substack, LinkedIn Articles, Blogger, Dailymotion.
+One tap: Flipboard. Drafts or fact cards only: Quora, Hacker News, Stack Exchange.
+Plus a podcast feed (articles read by the local voice) and IndexNow for the search engines.
 
 ## Install (Mac)
 
 ```bash
-git clone <this repo> agency && cd agency
-scripts/install_mac.sh        # brew, python env, LM Studio, ComfyUI, ACE-Step, MLX packages
-scripts/download_models.sh    # ~90 GB
-# start LM Studio's server (port 1234), ComfyUI (8188), ACE-Step (7867)
-.venv/bin/agency doctor       # checks tools, servers, models, memory plan, platforms
-cp .env.example .env          # fill in the platforms you use
-.venv/bin/agency run          # panel at http://127.0.0.1:8765, scheduler on
+git clone <this repo> && cd AiToolsPrimer/agency
+scripts/install_mac.sh          # brew, python env, LM Studio, llama.cpp, Chrome, MLX packages, ComfyUI, ACE-Step, Agency.app
+scripts/download_models.sh      # about 130 GB
+.venv/bin/agency doctor --benchmark
+.venv/bin/agency chrome-login x medium substack   # log in once in the agent's Chrome
+cp .env.example .env            # fill in the platforms you use
+.venv/bin/agency run            # dashboard at http://127.0.0.1:8765 (or click Agency.app)
 ```
 
-`config/agency.yaml` starts with `dry_run: true`: the whole pipeline runs, files are
-produced, but every connector only simulates. Set it to `false` when the queue looks right.
+`config/agency.yaml` starts with `dry_run: true`: everything runs and files are produced, but
+every connector only simulates. Set it to `false` when the queue looks right. Defaults keep
+`publishing` off and `approval_required` on: nothing leaves without your click until you decide.
 
-### ComfyUI workflows
+## The office (dashboard)
 
-Images, image edits and the presenter avatar run through ComfyUI. Export each workflow as
-API JSON and drop it in `workflows/` with the tokens described in
-[workflows/README.md](workflows/README.md). Video uses the LTX-2.5 MLX command by default
-(faster on Apple Silicon); add `workflows/video.json` to route it through ComfyUI instead.
-
-## Daily rhythm (UTC, configurable)
-
-- 07:30 daily cycle: research → plan → produce → safety → queue/publish
-- every 30 min: comments under our posts
-- every 5 min: approved items whose scheduled time has come are released
-- 22:00 analyst report → notes the director reads the next morning
-- Monday 09:00 scout
+Office (every desk live, phase, model in memory, feed, switches, run buttons) · Queue (approve, edit,
+reject; edits become corrections) · Operator (browser tasks with screenshots, Publish / Cancel) ·
+Outreach (network, questions, inbox, PR) · Deliverables (plan, report, campaign, briefing) · Content
+(pipeline per item: team, fact check, limits, safety, policy, result) · Assets · Platforms (on/off and
+mode per platform) · Knowledge (cards, proposed updates) · Learning (corrections, style rules, training
+set) · Models (benchmark, lineup, loads) · Scout · Logs.
 
 ## Command line
 
 ```bash
-agency cycle --dry-run                      # one full day now
-agency video --topic "Five free PDF editors tested" --seconds 240
+agency cycle --dry-run          # one full day now
+agency video --topic "..." --seconds 240
 agency post --platform bluesky --topic "..." --image
-agency queue / agency approve 12
-agency toggle publishing on / agency toggle list
+agency queue / agency approve 12 / agency toggle publishing on
+agency doctor [--benchmark] / agency chrome-login x
 ```
-
-## Memory plan (64 GB)
-
-The director (17 GB) stays resident. Media models load one at a time: Qwen-Image-2512
-(14 GB), LTX-2.5 (24 GB), voice and music (under 5 GB). `agency doctor` checks that the
-director plus the heaviest media model fit the GPU budget. Raise macOS's GPU limit to
-56 GB with `sudo sysctl iogpu.wired_limit_mb=57344`.
-
-A four-minute video is 20-40 scenes. On an M5 Pro expect roughly 20-40 minutes of
-rendering per video with mixed visuals (generated clips plus stills with camera motion),
-longer if every scene is a generated clip. The agency runs it in the background and the
-panel shows progress.
-
-## Optional paid director
-
-`director.provider: anthropic` in `agency.yaml` plus `ANTHROPIC_API_KEY` makes Claude the
-director while every other agent stays local. It is off by default.
 
 ## Tests
 
 ```bash
-pip install -e ".[dev]" && pytest
+pip install -e ".[dev]" playwright && pytest
 ```
 
-The suite rehearses the full pipeline in dry-run mode, including a real FFmpeg assembly of a
-video with shorts, the payment guard, the policy engine, the platform connectors and the panel.
+103 tests rehearse the whole agency in dry-run mode with a fake model: the fact checker, the
+team, the policy engine and the payment guard, all 26 connectors, the browser operator against a
+local compose page (a real Chromium), a real FFmpeg assembly of a video with shorts, the podcast feed,
+the knowledge base, outreach, deliverables (PDF through Chromium) and every dashboard page.
+
+What is not verified here: the local model runtimes themselves (LM Studio, llama.cpp with
+Flash-Next, mflux, LTX-2.5 on MLX, Step-Audio-EditX, ACE-Step) need the Mac; `agency doctor`
+reports what is missing and the install script names the packages to check.

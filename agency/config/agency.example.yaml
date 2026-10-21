@@ -2,6 +2,7 @@
 dry_run: true              # nothing leaves the Mac until you set this to false
 panel_host: 127.0.0.1
 panel_port: 8765
+ui_language: en
 
 brand:
   name: AI Tools Primer
@@ -27,13 +28,22 @@ brand:
   banned_claims: ["guaranteed", "best in the world", "#1", "100% safe"]
 
 hardware:
-  profile: m5pro-64gb      # m5pro-64gb | 64gb | 128gb | 32gb
+  profile: m5pro-64gb      # m5pro-64gb (brain A) | m5pro-64gb-b (27B only) | 128gb | 32gb
   unified_memory_gb: 64
-  gpu_budget_gb: 44        # raise after `sudo sysctl iogpu.wired_limit_mb=57344` (56 GB) if you like
-  director_resident: true
+  gpu_budget_gb: 56        # after `sudo sysctl iogpu.wired_limit_mb=57344`
+  one_model_at_a_time: true
+
+models:
+  brain: auto              # auto = the doctor benchmark decides between Flash-Next and the 27B | flash-next | 27b
+  team_mode: team          # team = brain + second pen, brain judges | best_of_n | single
+  thinking_effort: xhigh   # brain decisions, judging, fact-check
+  draft_effort: medium     # first drafts
+  candidates_per_draft: 2
+  overrides: {}            # task -> model name from the registry, e.g. {tts: "Kokoro 82M"}
 
 runtimes:
   lmstudio_url: http://127.0.0.1:1234
+  llamacpp_port: 8081
   comfyui_url: http://127.0.0.1:8188
   acestep_url: http://127.0.0.1:7867
   lms_cli: lms
@@ -53,11 +63,21 @@ video:
   default_visual_mode: mixed   # generated | image_motion | mixed
 
 media:
-  image_command: ""        # leave empty to use ComfyUI; or e.g. "mflux-generate --model qwen-image --prompt {prompt} --output {out} --width {width} --height {height} --seed {seed}"
-  video_command: ""        # leave empty to use the LTX-2.5 MLX template from the registry (or workflows/video.json if present)
-  tts_voice: default       # path to a 5-10 s WAV of the voice to clone (Chatterbox), or a Kokoro voice id like af_heart
+  image_command: ""        # empty = mflux template from the registry; "comfyui" = ComfyUI workflow
+  image_steps: 20
+  video_command: ""        # empty = LTX-2.5 MLX template (or workflows/video.json when present)
+  tts_voice: default       # path to a 3-10 s WAV to clone (Step-Audio-EditX / Chatterbox), or a Kokoro voice id like af_heart
   music_endpoint: /generate
   presenter_image: config/presenter.png   # optional photo for 'presenter' scenes
+  podcast_base_url: ""     # public URL of the folder where you host assets/podcast (feed.xml and MP3s)
+
+browser:
+  headless: false          # the operator's Chrome window stays visible on the Mac
+  channel: chrome          # installed Google Chrome; set "" to use Playwright's Chromium
+  executable: ""
+  profile_dir: state/chrome-profile
+  pace_seconds: 0.6
+  actions_per_day: 15
 
 limits:
   posts_per_platform_per_day: 4
@@ -66,6 +86,7 @@ limits:
   videos_per_week: 3
   quiet_hours_utc: [1, 6]
   max_revisions: 2
+  browser_actions_per_day: 15
 
 director:
   provider: local          # local | anthropic (paid, needs ANTHROPIC_API_KEY; off by default)
@@ -78,3 +99,9 @@ director:
 platforms:
   reddit:
     extra: {subreddit: u_aitoolsprimer}
+  substack:
+    extra: {publication: aitoolsprimer}     # the subdomain of your Substack
+  blogger:
+    extra: {blog_id: ""}
+  # mode per platform: api | browser | intent | manual | off (defaults: X/Medium/Substack/LinkedIn Articles/Blogger/Dailymotion = browser,
+  # Reddit/Quora/HN/Stack Exchange = manual, Flipboard = intent, everything else = api). Changeable from the dashboard.
