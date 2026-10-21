@@ -36,7 +36,7 @@ from agency.media.images import Images
 from agency.media.runner import ComfyUI
 from agency.media.video import VideoAssembler
 from agency.memory.store import Store
-from agency.models import registry
+from agency.models import paths, registry
 from agency.models.host import BrainChoice, ModelHost
 from agency.office import Office
 from agency.browser.operator import BrowserOperator, default_executable
@@ -68,7 +68,7 @@ class Agency:
         self.models: dict[str, registry.ModelSpec] = {task: registry.resolve(task, s.hardware.profile, s.models.overrides) for task in registry.ASSIGNMENTS}
         self.brain_choice = BrainChoice(self.state_dir / "brain.json")
         self.models["brain"] = self._pick_brain()
-        self.host = ModelHost(lms_cli=s.runtimes.lms_cli, lmstudio_url=s.runtimes.lmstudio_url, python=s.runtimes.python, state_dir=self.state_dir, dry_run=self.dry_run or llm is not None, on_event=self._model_event)
+        self.host = ModelHost(lms_cli=s.runtimes.lms_cli, lmstudio_url=s.runtimes.lmstudio_url, python=s.runtimes.python, state_dir=self.state_dir, dry_run=self.dry_run or llm is not None, on_event=self._model_event, models_dir=s.models_dir)
         self.comfy = ComfyUI(s.runtimes.comfyui_url)
         self.ff = FF(s.runtimes.ffmpeg, s.runtimes.ffprobe)
 
@@ -235,6 +235,8 @@ class Agency:
             "resident": resident.name if resident else None,
             "resident_gb": self.host.resident_gb(),
             "budget_gb": self.settings.hardware.gpu_budget_gb,
+            "models_dir": str(self.settings.models_dir),
+            "disk": paths.disk_status(self.settings.models_dir),
             "platforms": {n: {"label": p.label, "configured": p.configured(), "missing": p.missing_env(), "enabled": self.toggles.platform_enabled(n), "mode": self.mode_for(n), "modes": list(p.publish_modes), "kinds": sorted(p.kinds), "note": p.free_tier_note} for n, p in self.platforms.items()},
             "toggles": self.toggles.all(),
             "queued": len(self.store.list_content(status="queued")),

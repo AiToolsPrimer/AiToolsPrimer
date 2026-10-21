@@ -8,7 +8,9 @@ def test_every_task_has_commercial_license_and_fits_alone_in_64gb():
     for task in registry.ASSIGNMENTS:
         for m in registry.candidates(task):
             assert "non-commercial" not in m.license.lower(), m.name
-            assert m.memory_gb <= 56, (task, m.name)   # one model at a time: each must fit alone
+        for profile in ("m5pro-64gb", "m5pro-64gb-b", "32gb"):
+            m = registry.resolve(task, profile)
+            assert m.memory_gb <= 56, (task, profile, m.name)   # one model at a time: what a 64 GB profile loads must fit alone
 
 
 def test_profiles_and_overrides():

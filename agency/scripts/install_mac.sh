@@ -28,10 +28,17 @@ uv pip install -e ".[dev]" || pip install -e ".[dev]"
 uv pip install playwright || pip install playwright
 
 echo "== Apple-Silicon inference packages (MLX)"
-uv pip install mlx mlx-lm mlx-vlm mflux parakeet-mlx mlx-whisper kokoro soundfile torch torchaudio || true
+uv pip install huggingface_hub mlx mlx-lm mlx-vlm mflux parakeet-mlx mlx-whisper kokoro soundfile torch torchaudio || true
 uv pip install chatterbox-tts || echo "chatterbox-tts optional (fallback voice)"
-uv pip install step-audio-editx-mlx || echo "Step-Audio-EditX MLX port: follow https://huggingface.co/appautomaton/step-audio-editx-8bit-mlx (Kokoro is the fallback voice)"
-uv pip install ltx-mlx || echo "LTX-2.5 on MLX: follow docs/MODELS.md (LTX-2.5 section) for the current package; ComfyUI is the alternative"
+
+echo "== Voice: mlx-speech (Step-Audio-EditX int8) in its own Python 3.13 environment"
+uv python install 3.13 || true
+uv tool install --python 3.13 mlx-speech && uv tool update-shell || echo "mlx-speech could not be installed: Kokoro is the fallback voice"
+
+echo "== Video: ltx-2-mlx (LTX-2.5 on MLX, int8 pack)"
+if [ ! -d "$HOME/ltx-2-mlx" ]; then
+  git clone https://github.com/dgrauet/ltx-2-mlx "$HOME/ltx-2-mlx" && (cd "$HOME/ltx-2-mlx" && uv sync --all-extras) || echo "ltx-2-mlx: see docs/MODELS.md (video section)"
+fi
 
 echo "== ComfyUI (image editing, presenter avatar; optional video)"
 if [ ! -d "$HOME/ComfyUI" ]; then
@@ -55,7 +62,8 @@ echo "== Agency config and Dock app"
 scripts/make_app.sh || true
 echo
 echo "Done. Next:"
-echo "  1. scripts/download_models.sh          (about 130 GB)"
+echo "  0. External SSD? Put AGENCY_MODELS=/Volumes/<disk>/models in .env first (README: 'Models on an external SSD')"
+echo "  1. scripts/download_models.sh          (about 260 GB, in one folder)"
 echo "  2. Start LM Studio (server on :1234); ACE-Step (:7867) and ComfyUI (:8188) only when you need music/editing/avatar"
 echo "  3. .venv/bin/agency doctor --benchmark (picks the brain that runs best on this Mac)"
 echo "  4. .venv/bin/agency chrome-login x medium substack   (log in once in the agent's Chrome)"

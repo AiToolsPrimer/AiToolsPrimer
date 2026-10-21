@@ -18,10 +18,26 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
-ROOT = Path(os.environ.get("AGENCY_ROOT", Path(__file__).resolve().parent.parent))
+
+
+def _load_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        value = value.strip().strip('"').strip("'")
+        if value:                      # an empty line (KEY=) means "not set", never an empty value
+            os.environ.setdefault(key.strip(), value)
+
+
+ROOT = Path(os.environ.get("AGENCY_ROOT") or Path(__file__).resolve().parent.parent)
+_load_dotenv(ROOT / ".env")   # so AGENCY_STATE / AGENCY_ASSETS / AGENCY_MODELS in .env count from the start
 CONFIG_DIR = ROOT / "config"
-STATE_DIR = Path(os.environ.get("AGENCY_STATE", ROOT / "state"))
-ASSETS_DIR = Path(os.environ.get("AGENCY_ASSETS", ROOT / "assets"))
+STATE_DIR = Path(os.environ.get("AGENCY_STATE") or ROOT / "state")
+ASSETS_DIR = Path(os.environ.get("AGENCY_ASSETS") or ROOT / "assets")
 
 
 class Brand(BaseModel):
@@ -53,6 +69,7 @@ class Hardware(BaseModel):
     unified_memory_gb: int = 64
     gpu_budget_gb: int = 56  # after `sudo sysctl iogpu.wired_limit_mb=57344`; macOS default is ~70-75% of unified memory
     one_model_at_a_time: bool = True
+    models_dir: str = ""  # where the model files live; "" = ~/models. AGENCY_MODELS in .env (e.g. /Volumes/AI/models for an external SSD) wins.
 
 
 class Models(BaseModel):
@@ -165,6 +182,12 @@ class Settings(BaseModel):
             return cfg.mode
         return DEFAULT_MODES.get(platform, "api")
 
+    @property
+    def models_dir(self) -> Path:
+        from agency.models import paths
+
+        return paths.models_dir(self.hardware.models_dir)
+
     @classmethod
     def load(cls, path: Path | None = None) -> "Settings":
         path = path or CONFIG_DIR / "agency.yaml"
@@ -175,17 +198,6 @@ class Settings(BaseModel):
             data = yaml.safe_load(path.read_text()) or {}
         _load_dotenv(ROOT / ".env")
         return cls.model_validate(data)
-
-
-def _load_dotenv(path: Path) -> None:
-    if not path.exists():
-        return
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 # --------------------------------------------------------------------------- toggles

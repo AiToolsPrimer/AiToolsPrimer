@@ -66,17 +66,46 @@ Plus a podcast feed (articles read by the local voice) and IndexNow for the sear
 
 ```bash
 git clone <this repo> && cd AiToolsPrimer/agency
-scripts/install_mac.sh          # brew, python env, LM Studio, llama.cpp, Chrome, MLX packages, ComfyUI, ACE-Step, Agency.app
-scripts/download_models.sh      # about 130 GB
+scripts/install_mac.sh          # brew, python env, LM Studio, llama.cpp, Chrome, MLX packages, mlx-speech, ltx-2-mlx, ComfyUI, ACE-Step, Agency.app
+cp .env.example .env            # external SSD? set AGENCY_MODELS=/Volumes/<disk>/models here first (see below)
+scripts/download_models.sh      # about 260 GB, all in one folder
 .venv/bin/agency doctor --benchmark
 .venv/bin/agency chrome-login x medium substack   # log in once in the agent's Chrome
-cp .env.example .env            # fill in the platforms you use
 .venv/bin/agency run            # dashboard at http://127.0.0.1:8765 (or click Agency.app)
 ```
 
 `config/agency.yaml` starts with `dry_run: true`: everything runs and files are produced, but
 every connector only simulates. Set it to `false` when the queue looks right. Defaults keep
 `publishing` off and `approval_required` on: nothing leaves without your click until you decide.
+
+## Models on an external SSD
+
+The lineup takes about 260 GB on disk (the brain alone is 95 GB: 44 GB of weights that load into
+memory and a 50 GB n-gram shard that stays on the disk and is read while it writes). The internal
+disk is not required: every model lives under one folder, chosen once.
+
+```bash
+# 1. Disk Utility: erase the SSD as APFS (GUID), name it e.g. "AI"  -> it mounts at /Volumes/AI
+# 2. keep Spotlight off that volume (otherwise it indexes 260 GB):  sudo mdutil -i off /Volumes/AI
+# 3. in .env:
+AGENCY_MODELS=/Volumes/AI/models          # every model, every cache (llama.cpp, Hugging Face, LM Studio, ComfyUI)
+AGENCY_ASSETS=/Volumes/AI/agency-assets   # optional: generated videos, images and voices too
+# 4. then as usual
+scripts/download_models.sh
+.venv/bin/agency doctor --benchmark       # shows the disk, its free space and its read speed
+```
+
+What the disk does to speed: the 27B, the image, video and voice models are loaded into memory
+once per job, so the disk only sets the load time (a 30 GB model loads in about 10 s over
+Thunderbolt, 30 s over USB 3). The Flash-Next brain is the exception: its n-gram shard is read
+from the disk at every token, so it wants a fast disk. `agency doctor` measures the read speed
+and says which case you are in; under about 700 MB/s it tells you to keep the brain on the
+internal disk or to use the 27B. A Thunderbolt 4/5 or USB4 NVMe enclosure (2,000-6,000 MB/s)
+is the right kind of disk; a USB-A SATA SSD (about 450 MB/s) is not, for the brain.
+
+If the SSD is unplugged the models are simply not there: the doctor and the Models page say
+"not mounted", nothing is downloaded to the wrong place, and the agency keeps serving the
+dashboard and the queue until the disk is back.
 
 ## The office (dashboard)
 

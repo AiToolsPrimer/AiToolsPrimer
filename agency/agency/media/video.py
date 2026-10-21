@@ -70,6 +70,10 @@ class VideoPlan:
             self.scenes.pop()
 
 
+def _round32(n: int) -> int:
+    return max(32, int(round(n / 32)) * 32)
+
+
 class VideoAssembler:
     def __init__(
         self,
@@ -115,7 +119,8 @@ class VideoAssembler:
             return out
         if not self.host:
             raise MediaError("video generation needs the model host")
-        self.host.run_job(self.video_spec, self.video_command, {"prompt": prompt, "out": out, "width": self.d.width, "height": self.d.height, "frames": frames, "fps": self.d.fps, "seed": seed or random.randint(1, 2**31)})
+        w32, h32 = _round32(self.d.width), _round32(self.d.height)   # LTX wants sides divisible by 32; normalize() crops back
+        self.host.run_job(self.video_spec, self.video_command, {"prompt": prompt, "out": out, "width": w32, "height": h32, "frames": frames, "fps": self.d.fps, "seed": seed or random.randint(1, 2**31)})
         if not out.exists():
             raise MediaError("video backend produced no file")
         return out

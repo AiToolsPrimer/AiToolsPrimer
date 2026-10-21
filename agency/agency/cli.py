@@ -72,6 +72,21 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"  - {task:14s} {m.name:24s} {m.memory_gb:5.1f} GB  {m.precision:28s} {m.runtime:14s} {m.license}")
     heaviest = max(m.memory_gb for m in a.models.values())
     row("memory plan", heaviest <= s.hardware.gpu_budget_gb, f"heaviest single model {heaviest} GB vs GPU budget {s.hardware.gpu_budget_gb} GB (raise with: sudo sysctl iogpu.wired_limit_mb=57344)")
+    from agency.models import paths
+
+    mdir = s.models_dir
+    disk = paths.disk_status(mdir)
+    need = sum(registry.disk_plan(s.hardware.profile, s.models.overrides).values())
+    print("Models disk")
+    if disk["external"] and not disk["mounted"]:
+        row("models disk", False, f"{disk['volume']} is not mounted: plug in the SSD that holds {mdir}")
+    else:
+        have = paths.used_gb(mdir) if mdir.exists() else 0.0
+        free = disk["free_gb"]
+        fits = free is None or free + have >= need
+        row("models disk", fits, f"{mdir}{' (external SSD)' if disk['external'] else ''}: {have} GB of models on disk, {free} GB free, the full lineup takes about {need:.0f} GB (including the optional 27B 4-bit draft lane; ACE-Step adds a few GB on first start)")
+        speed = paths.read_speed_mb_s(mdir) if (mdir.exists() or disk["mounted"]) else None
+        row("read speed", speed is None or speed >= paths.SPEED_OK_MB_S, f"{speed:.0f} MB/s: {paths.speed_verdict(speed)}" if speed else "could not measure")
     chosen = a.brain_choice.chosen_name()
     row("brain choice", chosen is not None, f"{chosen} (benchmarked on this Mac)" if chosen else "not benchmarked yet: run `agency doctor --benchmark` (loads each brain candidate once, a few minutes)")
     if getattr(args, "benchmark", False):
